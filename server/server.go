@@ -240,6 +240,7 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 		alwaysShowLogin:        c.AlwaysShowLoginScreen,
 		now:                    now,
 		templates:              tmpls,
+		oidcGroupsPrefix:       c.OIDCGroupsPrefix,
 		passwordConnector:      c.PasswordConnector,
 		logger:                 c.Logger,
 	}

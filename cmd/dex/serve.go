@@ -250,7 +250,7 @@ func runServe(options serveOptions) error {
 		logger.Infof("config using password grant connector: %s", c.OAuth2.PasswordConnector)
 	}
 	if c.OIDCGroupsPrefix {
-		logger.Infof("config user connector ID as oidc groups prefix")
+		logger.Infof("config using connector ID as oidc groups prefix")
 	}
 	if len(c.Web.AllowedOrigins) > 0 {
 		logger.Infof("config allowed origins: %s", c.Web.AllowedOrigins)
