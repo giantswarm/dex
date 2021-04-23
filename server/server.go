@@ -84,6 +84,9 @@ type Config struct {
 	// If set, the server will use this connector to handle password grants
 	PasswordConnector string
 
+	// If enabled, add connector ID as prefix for groups from auth response.
+	OIDCGroupsPrefix bool
+
 	GCFrequency time.Duration // Defaults to 5 minutes
 
 	// If specified, the server will use this function for determining time.
