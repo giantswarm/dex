@@ -157,6 +157,9 @@ type Server struct {
 	// Used for password grant
 	passwordConnector string
 
+	// If enabled, add connector ID as prefix for groups from auth response.
+	oidcGroupsPrefix bool
+
 	supportedResponseTypes map[string]bool
 
 	now func() time.Time
