@@ -84,6 +84,9 @@ type Config struct {
 	// If set, the server will use this connector to handle password grants
 	PasswordConnector string
 
+	// If enabled, add connector ID as prefix for groups from auth response.
+	OIDCGroupsPrefix bool
+
 	GCFrequency time.Duration // Defaults to 5 minutes
 
 	// If specified, the server will use this function for determining time.
@@ -153,6 +156,9 @@ type Server struct {
 
 	// Used for password grant
 	passwordConnector string
+
+	// If enabled, add connector ID as prefix for groups from auth response.
+	oidcGroupsPrefix bool
 
 	supportedResponseTypes map[string]bool
 
@@ -234,6 +240,7 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 		alwaysShowLogin:        c.AlwaysShowLoginScreen,
 		now:                    now,
 		templates:              tmpls,
+		oidcGroupsPrefix:       c.OIDCGroupsPrefix,
 		passwordConnector:      c.PasswordConnector,
 		logger:                 c.Logger,
 	}
