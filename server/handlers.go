@@ -1052,13 +1052,27 @@ func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request, clie
 		ident = newIdent
 	}
 
+	var oidcGroups []string
+	{
+		if s.oidcGroupsPrefix {
+			prefix := refresh.ConnectorID
+
+			for _, group := range ident.Groups {
+				prefixedGroup := fmt.Sprintf("%s:%s", prefix, group)
+				oidcGroups = append(oidcGroups, prefixedGroup)
+			}
+		} else {
+			oidcGroups = ident.Groups
+		}
+	}
+
 	claims := storage.Claims{
 		UserID:            ident.UserID,
 		Username:          ident.Username,
 		PreferredUsername: ident.PreferredUsername,
 		Email:             ident.Email,
 		EmailVerified:     ident.EmailVerified,
-		Groups:            ident.Groups,
+		Groups:            oidcGroups,
 	}
 
 	accessToken, err := s.newAccessToken(client.ID, claims, scopes, refresh.Nonce, refresh.ConnectorID)
