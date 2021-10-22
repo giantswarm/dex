@@ -192,7 +192,7 @@ func (s *Server) refreshWithConnector(ctx context.Context, token *internal.Refre
 
 	// Giant Swarm's custom group name prefixing.
 	if s.oidcGroupsPrefix {
-		s.logger.Debugf("Prefixing OIDC groups with '%s'", refresh.ConnectorID)
+		s.logger.Infof("refreshWithConnector - prefixing OIDC groups with '%s'", refresh.ConnectorID)
 
 		for idx, group := range ident.Groups {
 			ident.Groups[idx] = fmt.Sprintf("%s:%s", refresh.ConnectorID, group)
