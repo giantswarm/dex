@@ -1,13 +1,15 @@
 OS = $(shell uname | tr A-Z a-z)
 
 PROJ=dex
-ORG_PATH=github.com/dexidp
+ORG_PATH?=github.com/dexidp
+OUT_PATH?=/go/bin/dex
 REPO_PATH=$(ORG_PATH)/$(PROJ)
+BUILD_PATH?=$(REPO_PATH)
 export PATH := $(PWD)/bin:$(PATH)
 
 VERSION ?= $(shell ./scripts/git-version)
 
-DOCKER_REPO=quay.io/giantswarm/dex
+DOCKER_REPO?=quay.io/dexidp/dex
 DOCKER_IMAGE=$(DOCKER_REPO):$(VERSION)
 
 $( shell mkdir -p bin )
@@ -17,7 +19,7 @@ group=$(shell id -g -n)
 
 export GOBIN=$(PWD)/bin
 
-LD_FLAGS="-w -X main.version=$(VERSION)"
+LD_FLAGS?="-w -X main.version=$(VERSION)"
 
 # Dependency versions
 GOLANGCI_VERSION = 1.42.0
@@ -51,7 +53,7 @@ bin/example-app:
 
 .PHONY: release-binary
 release-binary: generate
-	@go build -o /go/bin/dex -v -ldflags $(LD_FLAGS) $(REPO_PATH)/cmd/dex
+	@go build -o $(OUT_PATH) -v -ldflags $(LD_FLAGS) $(BUILD_PATH)/cmd/dex
 
 docker-compose.override.yaml:
 	cp docker-compose.override.yaml.dist docker-compose.override.yaml
