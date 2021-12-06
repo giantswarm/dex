@@ -15,7 +15,7 @@ jobs:
 
           name: Build dex docker image
           command: |
-            TAG=$CIRCLE_SHA1 make -e docker-image
+            make docker-image
       - run:
           name: Login to quay
           command: |
