@@ -15,6 +15,7 @@ jobs:
 
           name: Build dex docker image
           command: |
+            make generate
             make docker-image
       - run:
           name: Login to quay
