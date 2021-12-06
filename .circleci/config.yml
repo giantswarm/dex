@@ -7,16 +7,9 @@ jobs:
     steps:
       - checkout
       - run:
-          environment:
-            DOCKER_REPO: quay.io/giantswarm/dex
-            ORG_PATH: github.com/giantswarm
-            OUT_PATH: dex
-            BUILD_PATH: ""
-
           name: Build dex docker image
           command: |
-            make generate
-            make docker-image
+            go build -o dex -tags $CIRCLE_SHA1 -v /cmd/dex
       - run:
           name: Login to quay
           command: |
