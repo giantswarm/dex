@@ -9,7 +9,7 @@ jobs:
       - run:
           name: Build dex docker image
           command: |
-            go build -o dex -tags $CIRCLE_SHA1 -v /cmd/dex
+            go build -o dex -tags $CIRCLE_SHA1 -v
       - run:
           name: Login to quay
           command: |
