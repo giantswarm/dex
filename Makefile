@@ -7,7 +7,7 @@ group=$(shell id -g -n)
 $( shell mkdir -p bin )
 
 PROJ      = dex
-ORG_PATH  = github.com/dexidp
+ORG_PATH ?= github.com/dexidp
 REPO_PATH = $(ORG_PATH)/$(PROJ)
 VERSION  ?= $(shell ./scripts/git-version)
 
