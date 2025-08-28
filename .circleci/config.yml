@@ -27,15 +27,15 @@ jobs:
           command: |
             if [[ -n $CIRCLE_TAG ]]; then docker tag gsoci.azurecr.io/giantswarm/dex:$CIRCLE_TAG giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:$CIRCLE_TAG; fi
       - run:
-          name: Login to quay
+          name: Login to azurecr
           command: |
-            docker login --username $QUAY_USERNAME --password $QUAY_PASSWORD gsoci.azurecr.io
+            docker login --username $AZURECR_USERNAME --password $AZURECR_PASSWORD gsoci.azurecr.io
       - run:
-          name: Push image to quay
+          name: Push image to azurecr
           command: |
             if ! [[ -n $CIRCLE_TAG ]]; then docker push gsoci.azurecr.io/giantswarm/dex:$CIRCLE_SHA1; fi
       - run:
-          name: Push images for git tags to quay
+          name: Push images for git tags to azurecr
           command: |
             if [[ -n $CIRCLE_TAG ]]; then docker push gsoci.azurecr.io/giantswarm/dex:$CIRCLE_TAG; fi
       - run:
