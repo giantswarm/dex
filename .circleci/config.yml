@@ -32,7 +32,7 @@ jobs:
           environment:
             DOCKER_REPO: gsoci.azurecr.io/giantswarm/dex
           command: |
-            TAG="${IMAGE_TAG}" make -e docker-image
+            VERSION="${IMAGE_TAG}" make -e docker-image
       - run:
           name: Login to Azure Container Registry
           command: |
