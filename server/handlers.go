@@ -31,6 +31,25 @@ const (
 	codeChallengeMethodS256  = "S256"
 )
 
+// prefixGroups returns a copy of the claims with connector prefix applied to groups.
+// If oidcGroupsPrefix is disabled, returns the original claims unchanged.
+//
+// This ensures groups are stored without prefix in refresh tokens (canonical form)
+// but transmitted with prefix in ID/access tokens.
+func (s *Server) prefixGroups(claims storage.Claims, connectorID string) storage.Claims {
+	if !s.oidcGroupsPrefix {
+		return claims
+	}
+
+	// Create a copy to avoid modifying the original
+	result := claims
+	result.Groups = make([]string, len(claims.Groups))
+	for idx, group := range claims.Groups {
+		result.Groups[idx] = fmt.Sprintf("%s:%s", connectorID, group)
+	}
+	return result
+}
+
 func (s *Server) handlePublicKeys(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// TODO(ericchiang): Cache this.
@@ -508,18 +527,6 @@ func (s *Server) handleConnectorCallback(w http.ResponseWriter, r *http.Request)
 // finalizeLogin associates the user's identity with the current AuthRequest, then returns
 // the approval page's path.
 func (s *Server) finalizeLogin(ctx context.Context, identity connector.Identity, authReq storage.AuthRequest, conn connector.Connector) (string, bool, error) {
-	/*
-	 * Giant Swarm custom code to inject connector prefix in the group names, so it enables us
-	 * to use dex in shared installations
-	 */
-	if s.oidcGroupsPrefix {
-		for idx, group := range identity.Groups {
-			identity.Groups[idx] = fmt.Sprintf("%s:%s", authReq.ConnectorID, group)
-		}
-	}
-	/*
-	 * END custom code
-	 */
 
 	claims := storage.Claims{
 		UserID:            identity.UserID,
@@ -702,6 +709,19 @@ func (s *Server) sendCodeResponse(w http.ResponseWriter, r *http.Request, authRe
 		accessToken string
 	)
 
+	/*
+	 * Giant Swarm custom code to inject connector prefix in the group names, so it enables us
+	 * to use dex in shared installations
+	 */
+
+	// Apply connector prefix to groups for token generation (wire format).
+	// The authReq.Claims stores unprefixed groups (storage format).
+	claimsForToken := s.prefixGroups(authReq.Claims, authReq.ConnectorID)
+
+	/*
+	 * END custom code
+	 */
+
 	for _, responseType := range authReq.ResponseTypes {
 		switch responseType {
 		case responseTypeCode:
@@ -735,7 +755,7 @@ func (s *Server) sendCodeResponse(w http.ResponseWriter, r *http.Request, authRe
 			implicitOrHybrid = true
 			var err error
 
-			accessToken, _, err = s.newAccessToken(r.Context(), authReq.ClientID, authReq.Claims, authReq.Scopes, authReq.Nonce, authReq.ConnectorID)
+			accessToken, _, err = s.newAccessToken(r.Context(), authReq.ClientID, claimsForToken, authReq.Scopes, authReq.Nonce, authReq.ConnectorID)
 			if err != nil {
 				s.logger.ErrorContext(r.Context(), "failed to create new access token", "err", err)
 				s.tokenErrHelper(w, errServerError, "", http.StatusInternalServerError)
@@ -745,7 +765,7 @@ func (s *Server) sendCodeResponse(w http.ResponseWriter, r *http.Request, authRe
 			implicitOrHybrid = true
 			var err error
 
-			idToken, idTokenExpiry, err = s.newIDToken(r.Context(), authReq.ClientID, authReq.Claims, authReq.Scopes, authReq.Nonce, accessToken, code.ID, authReq.ConnectorID)
+			idToken, idTokenExpiry, err = s.newIDToken(r.Context(), authReq.ClientID, claimsForToken, authReq.Scopes, authReq.Nonce, accessToken, code.ID, authReq.ConnectorID)
 			if err != nil {
 				s.logger.ErrorContext(r.Context(), "failed to create ID token", "err", err)
 				s.tokenErrHelper(w, errServerError, "", http.StatusInternalServerError)
@@ -956,14 +976,27 @@ func (s *Server) handleAuthCode(w http.ResponseWriter, r *http.Request, client s
 }
 
 func (s *Server) exchangeAuthCode(ctx context.Context, w http.ResponseWriter, authCode storage.AuthCode, client storage.Client) (*accessTokenResponse, error) {
-	accessToken, _, err := s.newAccessToken(ctx, client.ID, authCode.Claims, authCode.Scopes, authCode.Nonce, authCode.ConnectorID)
+	/*
+	 * Giant Swarm custom code to inject connector prefix in the group names, so it enables us
+	 * to use dex in shared installations
+	 */
+
+	// Apply connector prefix to groups for token generation (wire format).
+	// The authCode.Claims stores unprefixed groups (storage format).
+	claimsForToken := s.prefixGroups(authCode.Claims, authCode.ConnectorID)
+
+	/*
+	 * END custom code
+	 */
+
+	accessToken, _, err := s.newAccessToken(ctx, client.ID, claimsForToken, authCode.Scopes, authCode.Nonce, authCode.ConnectorID)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to create new access token", "err", err)
 		s.tokenErrHelper(w, errServerError, "", http.StatusInternalServerError)
 		return nil, err
 	}
 
-	idToken, expiry, err := s.newIDToken(ctx, client.ID, authCode.Claims, authCode.Scopes, authCode.Nonce, accessToken, authCode.ID, authCode.ConnectorID)
+	idToken, expiry, err := s.newIDToken(ctx, client.ID, claimsForToken, authCode.Scopes, authCode.Nonce, accessToken, authCode.ID, authCode.ConnectorID)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to create ID token", "err", err)
 		s.tokenErrHelper(w, errServerError, "", http.StatusInternalServerError)
@@ -1221,14 +1254,27 @@ func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, cli
 		Groups:            identity.Groups,
 	}
 
-	accessToken, _, err := s.newAccessToken(ctx, client.ID, claims, scopes, nonce, connID)
+	/*
+	 * Giant Swarm custom code to inject connector prefix in the group names, so it enables us
+	 * to use dex in shared installations
+	 */
+
+	// Apply connector prefix to groups for token generation (wire format).
+	// The claims variable stores unprefixed groups (storage format).
+	claimsForToken := s.prefixGroups(claims, connID)
+
+	/*
+	 * END custom code
+	 */
+
+	accessToken, _, err := s.newAccessToken(ctx, client.ID, claimsForToken, scopes, nonce, connID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "password grant failed to create new access token", "err", err)
 		s.tokenErrHelper(w, errServerError, "", http.StatusInternalServerError)
 		return
 	}
 
-	idToken, expiry, err := s.newIDToken(ctx, client.ID, claims, scopes, nonce, accessToken, "", connID)
+	idToken, expiry, err := s.newIDToken(ctx, client.ID, claimsForToken, scopes, nonce, accessToken, "", connID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "password grant failed to create new ID token", "err", err)
 		s.tokenErrHelper(w, errServerError, "", http.StatusInternalServerError)
