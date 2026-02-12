@@ -513,8 +513,11 @@ func (s *Server) finalizeLogin(ctx context.Context, identity connector.Identity,
 	 * to use dex in shared installations
 	 */
 	if s.oidcGroupsPrefix {
+		prefix := authReq.ConnectorID + ":"
 		for idx, group := range identity.Groups {
-			identity.Groups[idx] = fmt.Sprintf("%s:%s", authReq.ConnectorID, group)
+			// Strip existing prefix to ensure idempotency and avoid double-prefixing
+			// when groups are already prefixed (e.g. from upstream OIDC connectors or storage).
+			identity.Groups[idx] = fmt.Sprintf("%s%s", prefix, strings.TrimPrefix(group, prefix))
 		}
 	}
 	/*

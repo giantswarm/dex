@@ -360,8 +360,12 @@ func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request, clie
 	 * to use dex in shared installations
 	 */
 	if s.oidcGroupsPrefix {
+		prefix := rCtx.storageToken.ConnectorID + ":"
 		for idx, group := range ident.Groups {
-			ident.Groups[idx] = fmt.Sprintf("%s:%s", rCtx.storageToken.ConnectorID, group)
+			// Strip existing prefix to ensure idempotency and avoid double-prefixing
+			// when groups are already prefixed (e.g. from stored refresh token claims
+			// that were persisted with the prefix during login).
+			ident.Groups[idx] = fmt.Sprintf("%s%s", prefix, strings.TrimPrefix(group, prefix))
 		}
 	}
 	/*
