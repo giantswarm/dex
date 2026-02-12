@@ -16,20 +16,23 @@ jobs:
           command: |
             echo "CIRCLE_SHA1=${CIRCLE_SHA1}"
             echo "CIRCLE_TAG=${CIRCLE_TAG}"
+            echo "CIRCLE_BRANCH=${CIRCLE_BRANCH}"
       - run:
           name: Determine image tag
           command: |
-            if [[ -n "$CIRCLE_TAG" ]]; then
-              echo "export IMAGE_TAG=$CIRCLE_TAG" >> "$BASH_ENV"
+            if [[ -n "${CIRCLE_TAG}" ]]; then
+              echo "export IMAGE_TAG=${CIRCLE_TAG}" >> "${BASH_ENV}"
             else
-              echo "export IMAGE_TAG=$CIRCLE_SHA1" >> "$BASH_ENV"
+              # Sanitize branch name for use as a Docker tag
+              SANITIZED_BRANCH="$(echo "${CIRCLE_BRANCH}" | sed 's/[^a-zA-Z0-9._-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')"
+              echo "export IMAGE_TAG=${SANITIZED_BRANCH}" >> "${BASH_ENV}"
             fi
       - run:
           name: Build dex docker image
           environment:
             DOCKER_REPO: gsoci.azurecr.io/giantswarm/dex
           command: |
-            TAG=$IMAGE_TAG make -e docker-image
+            TAG="${IMAGE_TAG}" make -e docker-image
       - run:
           name: Login to Azure Container Registry
           command: |
@@ -41,6 +44,10 @@ jobs:
       - run:
           name: Tag and push to Aliyun
           command: |
+            if [[ -z "${CIRCLE_TAG}" ]]; then
+              echo "Skipping Aliyun push for non-tag build (branch: ${CIRCLE_BRANCH})"
+              exit 0
+            fi
             docker tag "gsoci.azurecr.io/giantswarm/dex:${IMAGE_TAG}" "giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:${IMAGE_TAG}"
             docker login --username "${ALIYUN_USERNAME}" --password "${ALIYUN_PASSWORD}" giantswarm-registry.cn-shanghai.cr.aliyuncs.com
             docker push "giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:${IMAGE_TAG}"
