@@ -527,7 +527,6 @@ func (s *Server) handleConnectorCallback(w http.ResponseWriter, r *http.Request)
 // finalizeLogin associates the user's identity with the current AuthRequest, then returns
 // the approval page's path.
 func (s *Server) finalizeLogin(ctx context.Context, identity connector.Identity, authReq storage.AuthRequest, conn connector.Connector) (string, bool, error) {
-
 	claims := storage.Claims{
 		UserID:            identity.UserID,
 		Username:          identity.Username,
