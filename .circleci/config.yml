@@ -1,9 +1,14 @@
 version: 2.1
 
+# This is a forked repo (from dexidp/dex) with a custom multi-stage Dockerfile.
+# We cannot use the standard architect orb go-build/push-to-registries jobs
+# because the upstream Dockerfile builds the Go binary inside Docker.
+# Instead we use a custom job that runs the upstream Makefile target.
+
 jobs:
   build:
     machine:
-      image: "ubuntu-2204:2023.10.1"
+      image: "ubuntu-2404:current"
     steps:
       - checkout
       - run:
@@ -11,48 +16,44 @@ jobs:
           command: |
             echo "CIRCLE_SHA1=${CIRCLE_SHA1}"
             echo "CIRCLE_TAG=${CIRCLE_TAG}"
+            echo "CIRCLE_BRANCH=${CIRCLE_BRANCH}"
       - run:
-          environment:
-            DOCKER_REPO: quay.io/giantswarm/dex
-            ORG_PATH: github.com/giantswarm
+          name: Determine image tag
+          command: |
+            if [[ -n "${CIRCLE_TAG}" ]]; then
+              echo "export IMAGE_TAG=${CIRCLE_TAG}" >> "${BASH_ENV}"
+            else
+              # Sanitize branch name for use as a Docker tag
+              SANITIZED_BRANCH="$(echo "${CIRCLE_BRANCH}" | sed 's/[^a-zA-Z0-9._-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')"
+              echo "export IMAGE_TAG=${SANITIZED_BRANCH}" >> "${BASH_ENV}"
+            fi
+      - run:
           name: Build dex docker image
+          environment:
+            DOCKER_REPO: gsoci.azurecr.io/giantswarm/dex
           command: |
-            TAG=$CIRCLE_SHA1 make -e docker-image
+            VERSION="${IMAGE_TAG}" make -e docker-image
       - run:
-          name: Re-tag images for aliyun
+          name: Login to Azure Container Registry
           command: |
-            if ! [[ -n $CIRCLE_TAG ]]; then docker tag quay.io/giantswarm/dex:$CIRCLE_SHA1 giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:$CIRCLE_SHA1; fi
+            docker login --username "${ACR_GSOCI_USERNAME}" --password "${ACR_GSOCI_PASSWORD}" gsoci.azurecr.io
       - run:
-          name: Re-tag images for git tags
+          name: Push image to Azure Container Registry
           command: |
-            if [[ -n $CIRCLE_TAG ]]; then docker tag quay.io/giantswarm/dex:$CIRCLE_TAG giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:$CIRCLE_TAG; fi
+            docker push "gsoci.azurecr.io/giantswarm/dex:${IMAGE_TAG}"
       - run:
-          name: Login to quay
+          name: Tag and push to Aliyun
           command: |
-            docker login --username $QUAY_USERNAME --password $QUAY_PASSWORD quay.io
-      - run:
-          name: Push image to quay
-          command: |
-            if ! [[ -n $CIRCLE_TAG ]]; then docker push quay.io/giantswarm/dex:$CIRCLE_SHA1; fi
-      - run:
-          name: Push images for git tags to quay
-          command: |
-            if [[ -n $CIRCLE_TAG ]]; then docker push quay.io/giantswarm/dex:$CIRCLE_TAG; fi
-      - run:
-          name: Login to aliyun
-          command: |
-            docker login --username $ALIYUN_USERNAME --password $ALIYUN_PASSWORD giantswarm-registry.cn-shanghai.cr.aliyuncs.com
-      - run:
-          name: Push image to aliyun
-          command: |
-            if ! [[ -n $CIRCLE_TAG ]]; then docker push giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:$CIRCLE_SHA1; fi
-      - run:
-          name: Push image for git tags to aliyun
-          command: |
-            if [[ -n $CIRCLE_TAG ]]; then docker push giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:$CIRCLE_TAG; fi
+            if [[ -z "${CIRCLE_TAG}" ]]; then
+              echo "Skipping Aliyun push for non-tag build (branch: ${CIRCLE_BRANCH})"
+              exit 0
+            fi
+            docker tag "gsoci.azurecr.io/giantswarm/dex:${IMAGE_TAG}" "giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:${IMAGE_TAG}"
+            docker login --username "${ALIYUN_USERNAME}" --password "${ALIYUN_PASSWORD}" giantswarm-registry.cn-shanghai.cr.aliyuncs.com
+            docker push "giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:${IMAGE_TAG}"
+
 workflows:
-  version: 2
-  build_and_update:
+  build_and_push:
     jobs:
       - build:
           context:
