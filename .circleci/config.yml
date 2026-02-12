@@ -1,5 +1,6 @@
 version: 2.1
 
+<<<<<<< Updated upstream
 orbs:
   architect: giantswarm/architect@6.12.0
 
@@ -26,3 +27,59 @@ workflows:
               ignore:
                 - main
                 - master
+=======
+# This is a forked repo (from dexidp/dex) with a custom multi-stage Dockerfile.
+# We cannot use the standard architect orb go-build/push-to-registries jobs
+# because the upstream Dockerfile builds the Go binary inside Docker.
+# Instead we use a custom job that runs the upstream Makefile target.
+
+jobs:
+  build:
+    machine:
+      image: "ubuntu-2404:current"
+    steps:
+      - checkout
+      - run:
+          name: Print env vars
+          command: |
+            echo "CIRCLE_SHA1=${CIRCLE_SHA1}"
+            echo "CIRCLE_TAG=${CIRCLE_TAG}"
+      - run:
+          name: Determine image tag
+          command: |
+            if [[ -n "$CIRCLE_TAG" ]]; then
+              echo "export IMAGE_TAG=$CIRCLE_TAG" >> "$BASH_ENV"
+            else
+              echo "export IMAGE_TAG=$CIRCLE_SHA1" >> "$BASH_ENV"
+            fi
+      - run:
+          name: Build dex docker image
+          environment:
+            DOCKER_REPO: gsoci.azurecr.io/giantswarm/dex
+          command: |
+            TAG=$IMAGE_TAG make -e docker-image
+      - run:
+          name: Login to Azure Container Registry
+          command: |
+            docker login --username "${ACR_GSOCI_USERNAME}" --password "${ACR_GSOCI_PASSWORD}" gsoci.azurecr.io
+      - run:
+          name: Push image to Azure Container Registry
+          command: |
+            docker push "gsoci.azurecr.io/giantswarm/dex:${IMAGE_TAG}"
+      - run:
+          name: Tag and push to Aliyun
+          command: |
+            docker tag "gsoci.azurecr.io/giantswarm/dex:${IMAGE_TAG}" "giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:${IMAGE_TAG}"
+            docker login --username "${ALIYUN_USERNAME}" --password "${ALIYUN_PASSWORD}" giantswarm-registry.cn-shanghai.cr.aliyuncs.com
+            docker push "giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:${IMAGE_TAG}"
+
+workflows:
+  build_and_push:
+    jobs:
+      - build:
+          context:
+            - architect
+          filters:
+            tags:
+              only: /^v.*/
+>>>>>>> Stashed changes
