@@ -1,0 +1,57 @@
+name: Build and push Docker image
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - docker-registry-swap
+      - fix-*
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: gsoci.azurecr.io
+          username: ${{ secrets.AZURECR_USERNAME }}
+          password: ${{ secrets.AZURECR_PASSWORD }}
+
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: giantswarm-registry.cn-shanghai.cr.aliyuncs.com
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VERSION=${{ steps.tag.outputs.tag }}
+          tags: |
+            gsoci.azurecr.io/giantswarm/dex:${{ steps.tag.outputs.tag }}
+            giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex:${{ steps.tag.outputs.tag }}
