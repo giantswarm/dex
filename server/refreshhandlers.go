@@ -355,23 +355,6 @@ func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request, clie
 		return
 	}
 
-	/*
-	 * Giant Swarm custom code to inject connector prefix in the group names, so it enables us
-	 * to use dex in shared installations
-	 */
-	if s.oidcGroupsPrefix {
-		prefix := rCtx.storageToken.ConnectorID + ":"
-		for idx, group := range ident.Groups {
-			// Strip existing prefix to ensure idempotency and avoid double-prefixing
-			// when groups are already prefixed (e.g. from stored refresh token claims
-			// that were persisted with the prefix during login).
-			ident.Groups[idx] = fmt.Sprintf("%s%s", prefix, strings.TrimPrefix(group, prefix))
-		}
-	}
-	/*
-	 * END custom code
-	 */
-
 	claims := storage.Claims{
 		UserID:            ident.UserID,
 		Username:          ident.Username,
@@ -381,14 +364,27 @@ func (s *Server) handleRefreshToken(w http.ResponseWriter, r *http.Request, clie
 		Groups:            ident.Groups,
 	}
 
-	accessToken, _, err := s.newAccessToken(r.Context(), client.ID, claims, rCtx.scopes, rCtx.storageToken.Nonce, rCtx.storageToken.ConnectorID)
+	/*
+	 * Giant Swarm custom code to inject connector prefix in the group names, so it enables us
+	 * to use dex in shared installations
+	 */
+
+	// Apply connector prefix to groups for token generation (wire format).
+	// The claims variable stores unprefixed groups (storage format).
+	claimsForToken := s.prefixGroups(claims, rCtx.storageToken.ConnectorID)
+
+	/*
+	 * END custom code
+	 */
+
+	accessToken, _, err := s.newAccessToken(r.Context(), client.ID, claimsForToken, rCtx.scopes, rCtx.storageToken.Nonce, rCtx.storageToken.ConnectorID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "failed to create new access token", "err", err)
 		s.refreshTokenErrHelper(w, newInternalServerError())
 		return
 	}
 
-	idToken, expiry, err := s.newIDToken(r.Context(), client.ID, claims, rCtx.scopes, rCtx.storageToken.Nonce, accessToken, "", rCtx.storageToken.ConnectorID)
+	idToken, expiry, err := s.newIDToken(r.Context(), client.ID, claimsForToken, rCtx.scopes, rCtx.storageToken.Nonce, accessToken, "", rCtx.storageToken.ConnectorID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "failed to create ID token", "err", err)
 		s.refreshTokenErrHelper(w, newInternalServerError())
