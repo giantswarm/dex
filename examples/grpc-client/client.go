@@ -58,7 +58,7 @@ func createPassword(cli api.DexClient) error {
 
 	// Create password.
 	if resp, err := cli.CreatePassword(context.TODO(), createReq); err != nil || resp.AlreadyExists {
-		if resp != nil &&  resp.AlreadyExists {
+		if resp != nil && resp.AlreadyExists {
 			return fmt.Errorf("Password %s already exists", createReq.Password.Email)
 		}
 		return fmt.Errorf("failed to create password: %v", err)
