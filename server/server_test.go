@@ -585,7 +585,10 @@ func makeOAuth2Tests(clientID string, clientSecret string, now func() time.Time)
 						EmailVerified bool     `json:"email_verified"`
 						Groups        []string `json:"groups"`
 					}
-					want := claims{ident.Username, ident.Email, ident.EmailVerified, ident.Groups}
+					// When connector returns fresh groups during refresh with oidcGroupsPrefix enabled,
+					// they get prefixed during token generation.
+					expectedGroups := []string{"mock:foo", "mock:bar"}
+					want := claims{ident.Username, ident.Email, ident.EmailVerified, expectedGroups}
 
 					newToken, err := config.TokenSource(ctx, token).Token()
 					if err != nil {
@@ -634,7 +637,10 @@ func makeOAuth2Tests(clientID string, clientSecret string, now func() time.Time)
 						EmailVerified bool     `json:"email_verified"`
 						Groups        []string `json:"groups"`
 					}
-					want := claims{ident.Username, ident.Email, ident.EmailVerified, ident.Groups}
+					// When connector returns fresh groups during refresh with oidcGroupsPrefix enabled,
+					// they get prefixed during token generation.
+					expectedGroups := []string{"mock:foo", "mock:bar"}
+					want := claims{ident.Username, ident.Email, ident.EmailVerified, expectedGroups}
 
 					newToken, err := config.TokenSource(ctx, token).Token()
 					if err != nil {
