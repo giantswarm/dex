@@ -5,4 +5,16 @@
     // Go specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-go.json5
     "github>giantswarm/renovate-presets:lang-go.json5",
   ],
+  // Track upstream dexidp/dex releases. When a new tag is found, Renovate
+  // opens a PR updating .upstream-version — the trigger to rebase GS changes.
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^\\.upstream-version$"],
+      "matchStrings": ["(?<currentValue>v?\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "dexidp/dex",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+    },
+  ],
 }
