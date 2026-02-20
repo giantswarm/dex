@@ -10,3 +10,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix double group prefix being applied when connector group prefix is already present.
+
+[Unreleased]: https://github.com/giantswarm/dex/compare/v2.43.1-gs2...HEAD
