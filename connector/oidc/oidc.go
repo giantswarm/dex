@@ -164,7 +164,11 @@ func getProvider(ctx context.Context, issuer string, overrides ProviderDiscovery
 	if overrides.JWKSURL != "" {
 		config.JWKSURL = overrides.JWKSURL
 	}
-	return config.NewProvider(context.Background()), nil
+	// Build the overridden provider with the incoming ctx so it retains the
+	// rootCAs-aware oauth2.HTTPClient. Using context.Background() here drops
+	// that client, making the provider verify JWKS against system roots only,
+	// which breaks RFC 8693 token exchange against tunnelled (custom-CA) JWKS.
+	return config.NewProvider(ctx), nil
 }
 
 // NewGroupFromClaims creates a new group from a list of claims and appends it to the list of existing groups.
