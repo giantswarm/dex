@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OIDC connector: retain the `rootCAs`-aware HTTP client when `providerDiscoveryOverrides` is set. Previously the overridden provider was rebuilt with a background context, so RFC 8693 token exchange verified the JWKS against the system trust store and failed with `x509: certificate signed by unknown authority` for issuers served behind a custom CA.
+
 ## [2.43.1-gs3] - 2026-02-20
 
 ### Fixed
