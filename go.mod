@@ -1,6 +1,6 @@
 module github.com/dexidp/dex
 
-go 1.24.0
+go 1.25.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.7.0
@@ -29,8 +29,8 @@ require (
 	github.com/prometheus/client_golang v1.22.0
 	github.com/russellhaering/goxmldsig v1.5.0
 	github.com/spf13/cobra v1.9.1
-	github.com/stretchr/testify v1.10.0
-	go.etcd.io/etcd/client/pkg/v3 v3.6.0
+	github.com/stretchr/testify v1.11.1
+	go.etcd.io/etcd/client/pkg/v3 v3.6.13
 	go.etcd.io/etcd/client/v3 v3.6.0
 	golang.org/x/crypto v0.38.0
 	golang.org/x/exp v0.0.0-20221004215720-b9f4876ce741
@@ -100,7 +100,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/mod v0.23.0 // indirect
 	golang.org/x/sync v0.14.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
 	golang.org/x/tools v0.30.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250303144028-a0af3efb3deb // indirect
