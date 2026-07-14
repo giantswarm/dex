@@ -549,6 +549,11 @@ func runVerify(t *testing.T, ca string, resp string, shouldSucceed bool) {
 	s := certStore{[]*x509.Certificate{cert}}
 
 	validator := dsig.NewDefaultValidationContext(s)
+	// The testdata responses are captured historical SAML messages signed by
+	// certs with fixed lifetimes. Pin the validation clock to the signing
+	// cert's own validity window so signature verification stays reproducible
+	// as the fixtures age out (otherwise: "Cert is not valid at this time").
+	validator.Clock = dsig.NewFakeClockAt(cert.NotBefore)
 
 	data, err := os.ReadFile(resp)
 	if err != nil {
