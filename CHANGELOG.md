@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.43.2] - 2026-07-14
+
 ### Fixed
 
 - GitHub connector: refresh expiring upstream user access tokens. The connector now persists GitHub's refresh token and expiry in `connectorData` and renews the upstream token on refresh, instead of rebuilding the oauth2 client with only the original access token. Fixes forced re-login after ~8h for GitHub App-backed connectors (GitHub App user-to-server tokens expire after 8 hours). Cherry-pick of upstream [dexidp/dex#4845](https://github.com/dexidp/dex/pull/4845) (`e8aaa98b`). Note: existing sessions only benefit after the user logs in once post-rollout, as older `connectorData` has no upstream refresh token.
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix double group prefix being applied when connector group prefix is already present.
 
-[Unreleased]: https://github.com/giantswarm/dex/compare/v2.43.1-gs4...HEAD
+[Unreleased]: https://github.com/giantswarm/dex/compare/v2.43.2...HEAD
+[2.43.2]: https://github.com/giantswarm/dex/compare/v2.43.1-gs4...v2.43.2
 [2.43.1-gs4]: https://github.com/giantswarm/dex/compare/v2.43.1-gs3...v2.43.1-gs4
 [2.43.1-gs3]: https://github.com/giantswarm/dex/compare/v2.43.1-gs2...v2.43.1-gs3
