@@ -123,6 +123,11 @@ func (o *ProviderDiscoveryOverrides) Empty() bool {
 	return o.TokenURL == "" && o.AuthURL == "" && o.JWKSURL == ""
 }
 
+// jwksFetchTimeout bounds a fetch of the issuer's signing keys, short enough
+// that an unreachable keys endpoint fails a token exchange before its caller
+// gives up.
+var jwksFetchTimeout = 5 * time.Second
+
 func getProvider(ctx context.Context, issuer string, overrides ProviderDiscoveryOverrides) (*oidc.Provider, error) {
 	provider, err := oidc.NewProvider(ctx, issuer)
 	if err != nil {
@@ -279,6 +284,15 @@ func (c *Config) Open(id string, logger *slog.Logger) (conn connector.Connector,
 		}
 	}
 
+	// go-oidc fetches the issuer's signing keys in the background, detached
+	// from the request that needs them, and every verification waits on that
+	// one fetch. Bound it, so an unreachable keys endpoint fails verifications
+	// fast instead of stalling all of them.
+	keysCtx := context.WithValue(ctx, oauth2.HTTPClient, &http.Client{
+		Transport: httpClient.Transport,
+		Timeout:   jwksFetchTimeout,
+	})
+
 	clientID := c.ClientID
 	return &oidcConnector{
 		provider:    provider,
@@ -290,10 +304,8 @@ func (c *Config) Open(id string, logger *slog.Logger) (conn connector.Connector,
 			Scopes:       scopes,
 			RedirectURL:  c.RedirectURI,
 		},
-		verifier: provider.VerifierContext(
-			ctx, // Pass our ctx with customized http.Client
-			&oidc.Config{ClientID: clientID},
-		),
+		verifier:                  provider.VerifierContext(keysCtx, &oidc.Config{ClientID: clientID}),
+		exchangeVerifier:          provider.VerifierContext(keysCtx, &oidc.Config{SkipClientIDCheck: true}),
 		logger:                    logger.With(slog.Group("connector", "type", "oidc", "id", id)),
 		cancel:                    cancel,
 		httpClient:                httpClient,
@@ -324,6 +336,7 @@ type oidcConnector struct {
 	redirectURI               string
 	oauth2Config              *oauth2.Config
 	verifier                  *oidc.IDTokenVerifier
+	exchangeVerifier          *oidc.IDTokenVerifier
 	cancel                    context.CancelFunc
 	logger                    *slog.Logger
 	httpClient                *http.Client
@@ -431,13 +444,24 @@ func (c *oidcConnector) TokenIdentity(ctx context.Context, subjectTokenType, sub
 	return c.createIdentity(ctx, identity, token, exchangeCaller)
 }
 
+// verifyError tells a verification that failed because the issuer's signing
+// keys could not be fetched from one where the token did not verify. go-oidc
+// formats the fetch error into the verification error with %v, so the cause is
+// recognisable only by go-oidc's "fetching keys" wording.
+func verifyError(msg string, err error) error {
+	if strings.Contains(err.Error(), "fetching keys") {
+		return fmt.Errorf("%s: %w: %v", msg, connector.ErrUpstreamUnavailable, err)
+	}
+	return fmt.Errorf("%s: %v", msg, err)
+}
+
 func (c *oidcConnector) createIdentity(ctx context.Context, identity connector.Identity, token *oauth2.Token, caller caller) (connector.Identity, error) {
 	var claims map[string]interface{}
 
 	if rawIDToken, ok := token.Extra("id_token").(string); ok {
 		idToken, err := c.verifier.Verify(ctx, rawIDToken)
 		if err != nil {
-			return identity, fmt.Errorf("oidc: failed to verify ID Token: %v", err)
+			return identity, verifyError("oidc: failed to verify ID Token", err)
 		}
 
 		if err := idToken.Claims(&claims); err != nil {
@@ -447,9 +471,9 @@ func (c *oidcConnector) createIdentity(ctx context.Context, identity connector.I
 		switch token.TokenType {
 		case "urn:ietf:params:oauth:token-type:id_token":
 			// Verify only works on ID tokens
-			idToken, err := c.provider.Verifier(&oidc.Config{SkipClientIDCheck: true}).Verify(ctx, token.AccessToken)
+			idToken, err := c.exchangeVerifier.Verify(ctx, token.AccessToken)
 			if err != nil {
-				return identity, fmt.Errorf("oidc: failed to verify token: %v", err)
+				return identity, verifyError("oidc: failed to verify token", err)
 			}
 			if err := idToken.Claims(&claims); err != nil {
 				return identity, fmt.Errorf("oidc: failed to decode claims: %v", err)

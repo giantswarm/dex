@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -1449,6 +1450,11 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request, cli
 		return
 	}
 	identity, err := teConn.TokenIdentity(ctx, subjectTokenType, subjectToken)
+	if errors.Is(err, connector.ErrUpstreamUnavailable) {
+		s.logger.ErrorContext(r.Context(), "failed to verify subject token: upstream unavailable", "connector_id", connID, "err", err)
+		s.tokenErrHelper(w, errServerError, "The connector's upstream identity provider is unavailable.", http.StatusServiceUnavailable)
+		return
+	}
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "failed to verify subject token", "err", err)
 		s.tokenErrHelper(w, errAccessDenied, "", http.StatusUnauthorized)

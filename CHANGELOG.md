@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OIDC connector: bound the fetch of the issuer's signing keys (JWKS) to 5 seconds. go-oidc fetches the keys in the background and every verification waits on that one fetch, so an unreachable or stalled keys endpoint used to hang every RFC 8693 token exchange and login for the issuer until the caller gave up. A token exchange whose keys cannot be fetched now answers `503 server_error` instead of `401 access_denied`, and the logged error names the keys URL and the failure; a subject token that does not verify still gets `401 access_denied`.
+
 ## [2.43.2] - 2026-07-14
 
 ### Fixed
