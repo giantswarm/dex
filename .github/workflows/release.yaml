@@ -10,6 +10,9 @@ permissions:
 jobs:
   artifacts:
     name: Artifacts
+    # Publishes dexidp/dex's images (ghcr.io, Docker Hub). The giantswarm fork
+    # publishes its images from CircleCI to gsoci.azurecr.io instead.
+    if: github.repository == 'dexidp/dex'
     uses: ./.github/workflows/artifacts.yaml
     with:
       publish: true
