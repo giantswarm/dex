@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.43.3] - 2026-09-24
+
 ### Fixed
 
 - OIDC connector: bound the fetch of the issuer's signing keys (JWKS) to 5 seconds. go-oidc fetches the keys in the background and every verification waits on that one fetch, so an unreachable or stalled keys endpoint used to hang every RFC 8693 token exchange and login for the issuer until the caller gave up. A token exchange whose keys cannot be fetched now answers `503 server_error` instead of `401 access_denied`, and the logged error names the keys URL and the failure; a subject token that does not verify still gets `401 access_denied`.
@@ -29,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix double group prefix being applied when connector group prefix is already present.
 
-[Unreleased]: https://github.com/giantswarm/dex/compare/v2.43.2...HEAD
+[Unreleased]: https://github.com/giantswarm/dex/compare/v2.43.3...HEAD
+[2.43.3]: https://github.com/giantswarm/dex/compare/v2.43.2...v2.43.3
 [2.43.2]: https://github.com/giantswarm/dex/compare/v2.43.1-gs4...v2.43.2
 [2.43.1-gs4]: https://github.com/giantswarm/dex/compare/v2.43.1-gs3...v2.43.1-gs4
 [2.43.1-gs3]: https://github.com/giantswarm/dex/compare/v2.43.1-gs2...v2.43.1-gs3
