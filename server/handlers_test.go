@@ -777,6 +777,24 @@ func TestHandleTokenExchange(t *testing.T) {
 			http.StatusBadRequest,
 			"",
 		},
+		{
+			"subject_token-does-not-verify",
+			"openid",
+			tokenTypeAccess,
+			tokenTypeID,
+			"invalid",
+			http.StatusUnauthorized,
+			"",
+		},
+		{
+			"upstream-unavailable",
+			"openid",
+			tokenTypeAccess,
+			tokenTypeID,
+			"upstream-unavailable",
+			http.StatusServiceUnavailable,
+			"",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

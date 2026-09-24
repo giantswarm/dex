@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -706,6 +707,71 @@ func TestTokenIdentityRootCAsWithOverride(t *testing.T) {
 
 	expectEquals(t, identity.UserID, "subvalue")
 	expectEquals(t, identity.Username, "namevalue")
+}
+
+func TestTokenIdentityKeysUnavailable(t *testing.T) {
+	defer func(timeout time.Duration) { jwksFetchTimeout = timeout }(jwksFetchTimeout)
+	jwksFetchTimeout = 200 * time.Millisecond
+
+	mux, err := oidcTestMux(map[string]any{
+		"sub":  "subvalue",
+		"name": "namevalue",
+	}, true)
+	require.NoError(t, err)
+	// While keysDown is set, the keys endpoint accepts the connection and never
+	// answers, the way an issuer behind broken egress does.
+	var keysDown atomic.Bool
+	keysDown.Store(true)
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/keys" && keysDown.Load() {
+			<-r.Context().Done()
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}))
+	defer testServer.Close()
+
+	conn, err := newConnector(Config{
+		Issuer: testServer.URL,
+		Scopes: []string{"openid", "groups"},
+	})
+	require.NoError(t, err)
+
+	res, err := http.Get(testServer.URL + "/token")
+	require.NoError(t, err)
+	defer res.Body.Close()
+	var tokenResponse map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&tokenResponse))
+	idToken := tokenResponse["id_token"].(string)
+
+	const tokenTypeID = "urn:ietf:params:oauth:token-type:id_token"
+	ctx := context.Background()
+
+	start := time.Now()
+	_, err = conn.TokenIdentity(ctx, tokenTypeID, idToken)
+	require.ErrorIs(t, err, connector.ErrUpstreamUnavailable)
+	require.Less(t, time.Since(start), 10*jwksFetchTimeout, "the key fetch is not bounded")
+
+	// The failed fetch does not stick: once the keys endpoint answers, the next
+	// exchange verifies.
+	keysDown.Store(false)
+	identity, err := conn.TokenIdentity(ctx, tokenTypeID, idToken)
+	require.NoError(t, err)
+	expectEquals(t, identity.UserID, "subvalue")
+
+	// A token signed with another key fails verification; that is not an outage.
+	otherKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+	forged, err := newToken(&jose.JSONWebKey{Key: otherKey, KeyID: "keyId", Algorithm: "RSA"}, map[string]any{
+		"iss": testServer.URL,
+		"sub": "subvalue",
+		"aud": "clientID",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	require.NoError(t, err)
+	_, err = conn.TokenIdentity(ctx, tokenTypeID, forged)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, connector.ErrUpstreamUnavailable)
 }
 
 func TestPromptType(t *testing.T) {

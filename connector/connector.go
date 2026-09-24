@@ -3,6 +3,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"net/http"
 )
 
@@ -103,3 +104,9 @@ type RefreshConnector interface {
 type TokenIdentityConnector interface {
 	TokenIdentity(ctx context.Context, subjectTokenType, subjectToken string) (Identity, error)
 }
+
+// ErrUpstreamUnavailable is wrapped by a connector error caused by the
+// connector's upstream identity provider being unreachable or failing, for
+// example a failed fetch of the issuer's signing keys. The failure is on the
+// server's side and says nothing about the credentials being verified.
+var ErrUpstreamUnavailable = errors.New("upstream identity provider unavailable")
