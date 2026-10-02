@@ -299,6 +299,9 @@ func runServe(options serveOptions) error {
 	if c.OAuth2.PasswordConnector != "" {
 		logger.Info("config using password grant connector", "password_connector", c.OAuth2.PasswordConnector)
 	}
+	if c.OIDCGroupsPrefix {
+		logger.Info("config using connector ID as groups prefix")
+	}
 	if len(c.Web.AllowedOrigins) > 0 {
 		logger.Info("config allowed origins", "origins", c.Web.AllowedOrigins)
 	}
@@ -376,6 +379,7 @@ func runServe(options serveOptions) error {
 		SkipApprovalScreen:     c.OAuth2.SkipApprovalScreen,
 		AlwaysShowLoginScreen:  c.OAuth2.AlwaysShowLoginScreen,
 		PasswordConnector:      c.OAuth2.PasswordConnector,
+		OIDCGroupsPrefix:       c.OIDCGroupsPrefix,
 		PKCE: authflow.PKCEConfig{
 			Enforce:                       c.OAuth2.PKCE.Enforce,
 			CodeChallengeMethodsSupported: c.OAuth2.PKCE.CodeChallengeMethodsSupported,

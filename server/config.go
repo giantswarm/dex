@@ -73,6 +73,9 @@ type Config struct {
 	// If set, the server will use this connector to handle password grants
 	PasswordConnector string
 
+	// If enabled, issued tokens carry every group as "<connector-id>:<group>".
+	OIDCGroupsPrefix bool
+
 	// PKCE configuration
 	PKCE authflow.PKCEConfig
 

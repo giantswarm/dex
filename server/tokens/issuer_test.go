@@ -3,8 +3,11 @@ package tokens
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
+	"encoding/json"
 	"log/slog"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,4 +76,60 @@ func TestIssuerIssue(t *testing.T) {
 	require.NotEmpty(t, ts2.AccessToken)
 	require.NotEmpty(t, ts2.IDToken)
 	require.Empty(t, ts2.RefreshToken)
+}
+
+// tokenGroups returns the groups claim of a signed token.
+func tokenGroups(t *testing.T, token string) []string {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3)
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	var claims struct {
+		Groups []string `json:"groups"`
+	}
+	require.NoError(t, json.Unmarshal(payload, &claims))
+	return claims.Groups
+}
+
+func TestIssuerGroupsPrefix(t *testing.T) {
+	tests := []struct {
+		name         string
+		groupsPrefix bool
+		connectorID  string
+		skip         bool
+		want         []string
+	}{
+		{name: "prefix off", connectorID: "mock", want: []string{"admins", "devs"}},
+		{name: "prefix on", groupsPrefix: true, connectorID: "mock", want: []string{"mock:admins", "mock:devs"}},
+		{name: "skipped by the authorization", groupsPrefix: true, connectorID: "mock", skip: true, want: []string{"admins", "devs"}},
+		{name: "no connector", groupsPrefix: true, connectorID: "", want: []string{"admins", "devs"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			iss, store := newTestIssuer(t)
+			iss.GroupsPrefix = tc.groupsPrefix
+
+			auth := testAuthorization()
+			auth.Scopes = append(auth.Scopes, ScopeGroups)
+			auth.Claims.Groups = []string{"admins", "devs"}
+			auth.ConnectorID = tc.connectorID
+			auth.SkipGroupsPrefix = tc.skip
+
+			ts, err := iss.Issue(ctx, auth, "", true)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, tokenGroups(t, ts.AccessToken))
+			require.Equal(t, tc.want, tokenGroups(t, ts.IDToken))
+
+			// The stored refresh token keeps the groups without the prefix, so
+			// the tokens of a refresh get it once.
+			var rt internal.RefreshToken
+			require.NoError(t, internal.Unmarshal(ts.RefreshToken, &rt))
+			stored, err := store.GetRefresh(ctx, rt.RefreshId)
+			require.NoError(t, err)
+			require.Equal(t, []string{"admins", "devs"}, stored.Claims.Groups)
+			require.Equal(t, []string{"admins", "devs"}, auth.Claims.Groups)
+		})
+	}
 }
