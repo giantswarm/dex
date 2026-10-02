@@ -27,6 +27,12 @@ type Issuer struct {
 
 	// Refresh persists and rotates refresh tokens.
 	Refresh *RefreshStore
+
+	// GroupsPrefix puts the connector ID in front of every group in signed
+	// tokens, as "<connector-id>:<group>". Only the token gets the prefix: the
+	// Authorization, and the refresh token stored from it, keep the groups as
+	// the connector returned them, so a refresh does not prefix them twice.
+	GroupsPrefix bool
 }
 
 // NewIssuer wires an issuer from the shared dependencies.
@@ -147,7 +153,7 @@ func (i *Issuer) SignIDToken(ctx context.Context, auth Authorization, accessToke
 			tok.Email = auth.Claims.Email
 			tok.EmailVerified = &auth.Claims.EmailVerified
 		case scope == ScopeGroups:
-			tok.Groups = auth.Claims.Groups
+			tok.Groups = i.groups(auth)
 		case scope == ScopeProfile:
 			tok.Name = auth.Claims.Username
 			tok.PreferredUsername = auth.Claims.PreferredUsername
@@ -186,6 +192,21 @@ func (i *Issuer) SignIDToken(ctx context.Context, auth Authorization, accessToke
 		return "", expiry, fmt.Errorf("failed to sign payload: %v", err)
 	}
 	return idToken, expiry, nil
+}
+
+// groups returns the groups claim for auth, with the connector ID in front of
+// every group when GroupsPrefix is set and auth does not skip it. The client
+// credentials grant has no connector (an empty connector ID), so its groups
+// stay as configured.
+func (i *Issuer) groups(auth Authorization) []string {
+	if !i.GroupsPrefix || auth.SkipGroupsPrefix || auth.ConnectorID == "" || auth.Claims.Groups == nil {
+		return auth.Claims.Groups
+	}
+	groups := make([]string, len(auth.Claims.Groups))
+	for idx, group := range auth.Claims.Groups {
+		groups[idx] = auth.ConnectorID + ":" + group
+	}
+	return groups
 }
 
 // crossClientTrusted reports whether peerID's client trusts clientID as a peer.

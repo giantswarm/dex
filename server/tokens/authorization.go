@@ -27,6 +27,10 @@ type Authorization struct {
 	// that user happens to have open to tokens minted by the password, token
 	// exchange and client credentials grants — none of which joined it.
 	SessionID string
+
+	// SkipGroupsPrefix keeps the groups as they are when the Issuer's
+	// GroupsPrefix is set. Token exchange sets it.
+	SkipGroupsPrefix bool
 }
 
 // TokenSet is what the /token endpoint returns for an Authorization.
