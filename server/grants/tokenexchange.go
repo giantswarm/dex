@@ -86,6 +86,8 @@ func (g *tokenExchange) Authorize(ctx context.Context, req *Request, client stor
 		Claims:      tokens.ClaimsFromIdentity(identity),
 		Scopes:      req.Scopes,
 		ConnectorID: req.ConnectorID,
+		// Exchanged tokens keep the groups without the connector prefix.
+		SkipGroupsPrefix: true,
 	}
 
 	// RFC 8693 returns a single requested token plus issued_token_type, not the

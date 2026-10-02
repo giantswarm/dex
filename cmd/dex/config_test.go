@@ -159,6 +159,7 @@ connectors:
     redirectURI: http://127.0.0.1:5556/dex/callback/google
 
 enablePasswordDB: true
+oidcGroupsPrefix: true
 staticPasswords:
 - email: "admin@example.com"
   # bcrypt hash of the string "password"
@@ -262,6 +263,7 @@ additionalFeatures: [
 			},
 		},
 		EnablePasswordDB: true,
+		OIDCGroupsPrefix: true,
 		StaticPasswords: []password{
 			{
 				Email:             "admin@example.com",

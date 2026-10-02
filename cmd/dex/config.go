@@ -64,6 +64,10 @@ type Config struct {
 	// to identify a user.
 	EnablePasswordDB bool `json:"enablePasswordDB"`
 
+	// OIDCGroupsPrefix puts the connector ID in front of every group in issued
+	// tokens, as "<connector-id>:<group>".
+	OIDCGroupsPrefix bool `json:"oidcGroupsPrefix,omitempty"`
+
 	// StaticPasswords cause the server use this list of passwords rather than
 	// querying the storage. Cannot be specified without enabling a passwords
 	// database.
