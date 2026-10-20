@@ -655,6 +655,112 @@ func TestTokenIdentity(t *testing.T) {
 	}
 }
 
+// TestTokenIdentitySubjectEmails exchanges a workload's token, such as a
+// Kubernetes ServiceAccount token, which carries a subject and no name or
+// email: subjectEmails admits only the subjects it lists, with their email.
+func TestTokenIdentitySubjectEmails(t *testing.T) {
+	const (
+		watch      = "system:serviceaccount:beekeeper:beekeeper"
+		watchEmail = "beekeeper@gazelle.example.com"
+	)
+	tests := []struct {
+		name          string
+		claims        map[string]any
+		subjectEmails map[string]string
+		clientID      string
+		accessToken   bool
+		wantEmail     string
+		wantErr       string
+	}{
+		{
+			name:          "listed subject",
+			claims:        map[string]any{"sub": watch},
+			subjectEmails: map[string]string{watch: watchEmail},
+			wantEmail:     watchEmail,
+		}, {
+			name:          "the token's own email is not read",
+			claims:        map[string]any{"sub": watch, "email": "admin@example.com", "email_verified": true},
+			subjectEmails: map[string]string{watch: watchEmail},
+			wantEmail:     watchEmail,
+		}, {
+			name:          "another workload of the issuer",
+			claims:        map[string]any{"sub": "system:serviceaccount:kube-system:default"},
+			subjectEmails: map[string]string{watch: watchEmail},
+			wantErr:       "is not one of subjectEmails",
+		}, {
+			name:          "a token of the subject for another audience",
+			claims:        map[string]any{"sub": watch},
+			subjectEmails: map[string]string{watch: watchEmail},
+			clientID:      "https://dex.example.com",
+			wantErr:       "expected audience",
+		}, {
+			name:          "an access token, whose audience is not checked",
+			claims:        map[string]any{"sub": watch},
+			subjectEmails: map[string]string{watch: watchEmail},
+			accessToken:   true,
+			wantErr:       "exchanges ID tokens only",
+		}, {
+			name:    "off: a token without email is refused",
+			claims:  map[string]any{"sub": watch},
+			wantErr: "missing \"name\" claim",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			testServer, err := setupServer(tc.claims, true)
+			if err != nil {
+				t.Fatal("failed to setup test server", err)
+			}
+			defer testServer.Close()
+			clientID := tc.clientID
+			if clientID == "" {
+				clientID = "clientID" // the test server's audience
+			}
+			conn, err := newConnector(Config{
+				Issuer:        testServer.URL,
+				ClientID:      clientID,
+				SubjectEmails: tc.subjectEmails,
+				GetUserInfo:   tc.accessToken, // the path an access token takes
+			})
+			if err != nil {
+				t.Fatal("failed to create new connector", err)
+			}
+
+			res, err := http.Get(testServer.URL + "/token")
+			if err != nil {
+				t.Fatal("failed to get initial token", err)
+			}
+			defer res.Body.Close()
+			var tokenResponse map[string]any
+			if err := json.NewDecoder(res.Body).Decode(&tokenResponse); err != nil {
+				t.Fatal("failed to decode initial token", err)
+			}
+
+			subjectType, subjectToken := "urn:ietf:params:oauth:token-type:id_token", tokenResponse["id_token"].(string)
+			if tc.accessToken {
+				subjectType, subjectToken = "urn:ietf:params:oauth:token-type:access_token", tokenResponse["access_token"].(string)
+			}
+			identity, err := conn.TokenIdentity(ctx, subjectType, subjectToken)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("failed to get token identity", err)
+			}
+			expectEquals(t, identity.UserID, watch)
+			expectEquals(t, identity.Email, tc.wantEmail)
+			expectEquals(t, identity.EmailVerified, true)
+			expectEquals(t, identity.Username, tc.wantEmail)
+		})
+	}
+}
+
 // TestTokenIdentityRootCAsWithOverride is a regression test for the override
 // branch of getProvider dropping the rootCAs-aware HTTP client.
 //
