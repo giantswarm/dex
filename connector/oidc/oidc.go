@@ -100,6 +100,14 @@ type Config struct {
 		GroupsKey string `json:"groups"` // defaults to "groups"
 	} `json:"claimMapping"`
 
+	// SubjectEmails admits only the subjects it lists, each with the email it
+	// maps the subject to, verified. For an issuer whose tokens name a
+	// workload rather than a person, such as a Kubernetes ServiceAccount
+	// issuer used for token exchange: its tokens carry no email, and every
+	// workload of the issuer could otherwise exchange its token. The token's
+	// email and email_verified claims are not read.
+	SubjectEmails map[string]string `json:"subjectEmails"`
+
 	// ClaimMutations holds all claim mutations options
 	ClaimMutations struct {
 		NewGroupFromClaims []NewGroupFromClaims `json:"newGroupFromClaims"`
@@ -320,6 +328,7 @@ func (c *Config) Open(id string, logger *slog.Logger) (conn connector.Connector,
 		overrideClaimMapping:      c.OverrideClaimMapping,
 		preferredUsernameKey:      c.ClaimMapping.PreferredUsernameKey,
 		emailKey:                  c.ClaimMapping.EmailKey,
+		subjectEmails:             c.SubjectEmails,
 		groupsKey:                 c.ClaimMapping.GroupsKey,
 		newGroupFromClaims:        c.ClaimMutations.NewGroupFromClaims,
 		groupsFilter:              groupsFilter,
@@ -351,6 +360,7 @@ type oidcConnector struct {
 	overrideClaimMapping      bool
 	preferredUsernameKey      string
 	emailKey                  string
+	subjectEmails             map[string]string
 	groupsKey                 string
 	newGroupFromClaims        []NewGroupFromClaims
 	groupsFilter              *regexp.Regexp
@@ -510,12 +520,20 @@ func (c *oidcConnector) createIdentity(ctx context.Context, identity connector.I
 	if !found {
 		return identity, fmt.Errorf("missing \"%s\" claim", subjectClaimKey)
 	}
+	subjectEmail, listed := c.subjectEmails[subject]
+	if c.subjectEmails != nil && !listed {
+		return identity, fmt.Errorf("oidc: subject %q is not one of subjectEmails", subject)
+	}
 
 	userNameKey := "name"
 	if c.userNameKey != "" {
 		userNameKey = c.userNameKey
 	}
 	name, found := claims[userNameKey].(string)
+	if !found && listed {
+		// A workload's token carries no name: it is named by its email.
+		name, found = subjectEmail, true
+	}
 	if !found {
 		return identity, fmt.Errorf("missing \"%s\" claim", userNameKey)
 	}
@@ -534,23 +552,28 @@ func (c *oidcConnector) createIdentity(ctx context.Context, identity connector.I
 	}
 
 	var email string
-	emailKey := "email"
-	email, found = claims[emailKey].(string)
-	if (!found || c.overrideClaimMapping) && c.emailKey != "" {
-		emailKey = c.emailKey
+	var emailVerified bool
+	if listed {
+		email, emailVerified = subjectEmail, true
+	} else {
+		emailKey := "email"
 		email, found = claims[emailKey].(string)
-	}
+		if (!found || c.overrideClaimMapping) && c.emailKey != "" {
+			emailKey = c.emailKey
+			email, found = claims[emailKey].(string)
+		}
 
-	if !found && hasEmailScope {
-		return identity, fmt.Errorf("missing email claim, not found \"%s\" key", emailKey)
-	}
+		if !found && hasEmailScope {
+			return identity, fmt.Errorf("missing email claim, not found \"%s\" key", emailKey)
+		}
 
-	emailVerified, found := claims["email_verified"].(bool)
-	if !found {
-		if c.insecureSkipEmailVerified {
-			emailVerified = true
-		} else if hasEmailScope {
-			return identity, errors.New("missing \"email_verified\" claim")
+		emailVerified, found = claims["email_verified"].(bool)
+		if !found {
+			if c.insecureSkipEmailVerified {
+				emailVerified = true
+			} else if hasEmailScope {
+				return identity, errors.New("missing \"email_verified\" claim")
+			}
 		}
 	}
 
