@@ -6,6 +6,23 @@ This repository is a fork of [dexidp/dex](https://github.com/dexidp/dex).
 
 [Giant Swarm](https://www.giantswarm.io/) uses Dex for [authentication to our Platform API](https://docs.giantswarm.io/overview/architecture/authentication/) and offer it as part of [auth-bundle managed app](https://github.com/giantswarm/auth-bundle) for our customer to enable authentication capabilities in a Giant Swarm cluster.
 
+## What this fork changes
+
+This fork is an upstream Dex release plus the changes in the table below. The file `.upstream-version` names the upstream release.
+
+Every change should also go upstream as a pull request. When you move the fork to a newer upstream release, check each row. If the new release already has the change, drop the fork's version and delete the row.
+
+| Change | Files | Upstream pull request | Upstream release that has it |
+| ------ | ----- | --------------------- | ---------------------------- |
+| With `oidcGroupsPrefix: true`, put the connector ID in front of every group name in tokens from the authorization code, implicit, password and refresh flows, for every connector type. Token exchange doesn't add it. Dex stores the groups without the prefix and adds it when it issues a token. | `cmd/dex/config.go`, `cmd/dex/serve.go`, `server/server.go`, `server/handlers.go`, `server/refreshhandlers.go` | None. [dexidp/dex#2051](https://github.com/dexidp/dex/pull/2051) proposed it for the OIDC connector and was closed in 2021. Upstream's `claimModifications.modifyGroupNames` adds a fixed prefix, but only in the `oidc` connector. | None |
+| The OIDC connector keeps its custom CA certificates (`rootCAs`) when `providerDiscoveryOverrides` is set. | `connector/oidc/oidc.go` | [dexidp/dex#5049](https://github.com/dexidp/dex/pull/5049) | v2.46.0 |
+| The GitHub connector renews GitHub's short-lived user tokens on refresh. | `connector/github/github.go` | [dexidp/dex#4845](https://github.com/dexidp/dex/pull/4845) | v2.46.0 |
+| The OIDC connector gives up fetching the issuer's signing keys (JWKS) after 5 seconds. A token exchange then answers `503` instead of `401`. | `connector/oidc/oidc.go`, `connector/connector.go`, `connector/mock/connectortest.go`, `server/handlers.go` | [dexidp/dex#5050](https://github.com/dexidp/dex/pull/5050) (the 5-second limit) and [dexidp/dex#5055](https://github.com/dexidp/dex/pull/5055) (the `503`), both open | None |
+| The SAML tests pin their clock to the test certificate's validity window, so the expired test certificate doesn't fail CI. This changes tests only. | `connector/saml/saml_test.go` | None | None |
+| Dex ignores the `web.headers` setting, because the line that passes it on was removed from `cmd/dex/serve.go` by mistake. dex-app doesn't set `web.headers`. Restore upstream's line on the next upgrade. | `cmd/dex/serve.go` | Not needed | Upstream never removed it |
+
+The table leaves out the tests for these changes, CI and repository files like `.circleci/`, `.github/`, `renovate.json5`, `Makefile`, `CODEOWNER`, `.upstream-version` and `CHANGELOG.md`, and a formatting fix in `examples/grpc-client/client.go`.
+
 ## Release Process
 
 ID Tokens are an OAuth2 extension introduced by OpenID Connect and dex's primary feature. ID Tokens are [JSON Web Tokens][jwt-io] (JWTs) signed by dex and returned as part of the OAuth2 response that attests to the end user's identity. An example JWT might look like:
