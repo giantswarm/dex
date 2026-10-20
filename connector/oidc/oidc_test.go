@@ -668,6 +668,7 @@ func TestTokenIdentitySubjectEmails(t *testing.T) {
 		claims        map[string]any
 		subjectEmails map[string]string
 		clientID      string
+		accessToken   bool
 		wantEmail     string
 		wantErr       string
 	}{
@@ -693,6 +694,12 @@ func TestTokenIdentitySubjectEmails(t *testing.T) {
 			clientID:      "https://dex.example.com",
 			wantErr:       "expected audience",
 		}, {
+			name:          "an access token, whose audience is not checked",
+			claims:        map[string]any{"sub": watch},
+			subjectEmails: map[string]string{watch: watchEmail},
+			accessToken:   true,
+			wantErr:       "exchanges ID tokens only",
+		}, {
 			name:    "off: a token without email is refused",
 			claims:  map[string]any{"sub": watch},
 			wantErr: "missing \"name\" claim",
@@ -716,6 +723,7 @@ func TestTokenIdentitySubjectEmails(t *testing.T) {
 				Issuer:        testServer.URL,
 				ClientID:      clientID,
 				SubjectEmails: tc.subjectEmails,
+				GetUserInfo:   tc.accessToken, // the path an access token takes
 			})
 			if err != nil {
 				t.Fatal("failed to create new connector", err)
@@ -731,7 +739,11 @@ func TestTokenIdentitySubjectEmails(t *testing.T) {
 				t.Fatal("failed to decode initial token", err)
 			}
 
-			identity, err := conn.TokenIdentity(ctx, "urn:ietf:params:oauth:token-type:id_token", tokenResponse["id_token"].(string))
+			subjectType, subjectToken := "urn:ietf:params:oauth:token-type:id_token", tokenResponse["id_token"].(string)
+			if tc.accessToken {
+				subjectType, subjectToken = "urn:ietf:params:oauth:token-type:access_token", tokenResponse["access_token"].(string)
+			}
+			identity, err := conn.TokenIdentity(ctx, subjectType, subjectToken)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)

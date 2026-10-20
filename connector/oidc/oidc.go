@@ -497,6 +497,10 @@ func (c *oidcConnector) createIdentity(ctx context.Context, identity connector.I
 				return identity, fmt.Errorf("oidc: failed to decode claims: %v", err)
 			}
 		case "urn:ietf:params:oauth:token-type:access_token":
+			// An access token carries no audience this connector can check.
+			if c.subjectEmails != nil {
+				return identity, errors.New("oidc: a connector with subjectEmails exchanges ID tokens only")
+			}
 			if !c.getUserInfo {
 				return identity, fmt.Errorf("oidc: getUserInfo is required for access token exchange")
 			}

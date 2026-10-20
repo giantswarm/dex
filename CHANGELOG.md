@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- OIDC connector: `subjectEmails` admits only the subjects it lists, each with the verified email it maps the subject to, for an issuer whose tokens name a workload rather than a person, such as a Kubernetes ServiceAccount issuer used for RFC 8693 token exchange. Its tokens carry no email, and token exchange checks no audience of the subject token, so without the list every workload of the issuer could exchange its token for a Dex identity. A listed subject's token without a name claim is named by its email; the token's own `email` and `email_verified` are not read. A token exchanged through such a connector must carry the connector's `clientID` as its audience, so a service that received the workload's token for itself cannot exchange it as the workload. Off (unset) by default.
+- OIDC connector: `subjectEmails` admits only the subjects it lists, each with the verified email it maps the subject to, for an issuer whose tokens name a workload rather than a person, such as a Kubernetes ServiceAccount issuer used for RFC 8693 token exchange. Its tokens carry no email, and token exchange checks no audience of the subject token, so without the list every workload of the issuer could exchange its token for a Dex identity. A listed subject's token without a name claim is named by its email; the token's own `email` and `email_verified` are not read. A token exchanged through such a connector must carry the connector's `clientID` as its audience, so a service that received the workload's token for itself cannot exchange it as the workload; an access token, whose audience the connector cannot check, is refused. Off (unset) by default.
 
 ## [2.43.3] - 2026-09-24
 
