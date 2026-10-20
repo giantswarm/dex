@@ -667,6 +667,7 @@ func TestTokenIdentitySubjectEmails(t *testing.T) {
 		name          string
 		claims        map[string]any
 		subjectEmails map[string]string
+		clientID      string
 		wantEmail     string
 		wantErr       string
 	}{
@@ -686,6 +687,12 @@ func TestTokenIdentitySubjectEmails(t *testing.T) {
 			subjectEmails: map[string]string{watch: watchEmail},
 			wantErr:       "is not one of subjectEmails",
 		}, {
+			name:          "a token of the subject for another audience",
+			claims:        map[string]any{"sub": watch},
+			subjectEmails: map[string]string{watch: watchEmail},
+			clientID:      "https://dex.example.com",
+			wantErr:       "expected audience",
+		}, {
 			name:    "off: a token without email is refused",
 			claims:  map[string]any{"sub": watch},
 			wantErr: "missing \"name\" claim",
@@ -701,8 +708,13 @@ func TestTokenIdentitySubjectEmails(t *testing.T) {
 				t.Fatal("failed to setup test server", err)
 			}
 			defer testServer.Close()
+			clientID := tc.clientID
+			if clientID == "" {
+				clientID = "clientID" // the test server's audience
+			}
 			conn, err := newConnector(Config{
 				Issuer:        testServer.URL,
+				ClientID:      clientID,
 				SubjectEmails: tc.subjectEmails,
 			})
 			if err != nil {

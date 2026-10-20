@@ -105,7 +105,8 @@ type Config struct {
 	// workload rather than a person, such as a Kubernetes ServiceAccount
 	// issuer used for token exchange: its tokens carry no email, and every
 	// workload of the issuer could otherwise exchange its token. The token's
-	// email and email_verified claims are not read.
+	// email and email_verified claims are not read, and an exchanged token
+	// must carry clientID as its audience.
 	SubjectEmails map[string]string `json:"subjectEmails"`
 
 	// ClaimMutations holds all claim mutations options
@@ -480,8 +481,15 @@ func (c *oidcConnector) createIdentity(ctx context.Context, identity connector.I
 	} else if caller == exchangeCaller {
 		switch token.TokenType {
 		case "urn:ietf:params:oauth:token-type:id_token":
-			// Verify only works on ID tokens
-			idToken, err := c.exchangeVerifier.Verify(ctx, token.AccessToken)
+			// Verify only works on ID tokens. A workload's token mapped by
+			// subjectEmails must be for this connector (its clientID), so a
+			// service that received the workload's token for itself cannot
+			// exchange it as the workload.
+			verifier := c.exchangeVerifier
+			if c.subjectEmails != nil {
+				verifier = c.verifier
+			}
+			idToken, err := verifier.Verify(ctx, token.AccessToken)
 			if err != nil {
 				return identity, verifyError("oidc: failed to verify token", err)
 			}
