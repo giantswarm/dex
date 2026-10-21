@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Pass the `web.headers` setting to the server again. The fork had removed this line from `cmd/dex/serve.go` by mistake, so Dex ignored custom HTTP response headers set there.
+
 ## [2.43.3] - 2026-09-24
 
 ### Fixed
