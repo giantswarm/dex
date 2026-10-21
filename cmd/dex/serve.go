@@ -295,6 +295,7 @@ func runServe(options serveOptions) error {
 		SkipApprovalScreen:     c.OAuth2.SkipApprovalScreen,
 		AlwaysShowLoginScreen:  c.OAuth2.AlwaysShowLoginScreen,
 		PasswordConnector:      c.OAuth2.PasswordConnector,
+		Headers:                c.Web.Headers.ToHTTPHeader(),
 		OIDCGroupsPrefix:       c.OIDCGroupsPrefix,
 		AllowedOrigins:         c.Web.AllowedOrigins,
 		AllowedHeaders:         c.Web.AllowedHeaders,
