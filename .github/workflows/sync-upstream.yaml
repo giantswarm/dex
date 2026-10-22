@@ -1,0 +1,44 @@
+name: Sync with upstream
+
+# GitHub starts dispatched and scheduled runs only from the default branch, and
+# that is still the old fork's `main`. This workflow runs the real one from the
+# `giantswarm` branch (FORK.md there, "Re-pin"). Delete it when `giantswarm`
+# becomes the default branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: 'Upstream ref to re-pin onto (the mirror master always follows upstream master)'
+        type: string
+        default: master
+      dry_run:
+        description: 'Rebase and report only, push nothing'
+        type: boolean
+        default: true
+      mirror_only:
+        description: 'Fast-forward the mirror (master, v* branches, tags) and stop'
+        type: boolean
+        default: false
+      candidate:
+        description: 'A sync/** branch rebased by hand onto upstream_ref, to land instead of rebasing (FORK.md, "Manual re-pin")'
+        type: string
+        default: ''
+      accept_hunks:
+        description: 'Carried hunks the re-pin drops or reworks on purpose, as scripts/fork/hunks.py reports them'
+        type: string
+        default: ''
+
+jobs:
+  sync:
+    permissions:
+      contents: write
+      actions: write
+    uses: giantswarm/dex/.github/workflows/sync-upstream.yaml@giantswarm
+    with:
+      upstream_ref: ${{ inputs.upstream_ref }}
+      dry_run: ${{ inputs.dry_run }}
+      mirror_only: ${{ inputs.mirror_only }}
+      candidate: ${{ inputs.candidate }}
+      accept_hunks: ${{ inputs.accept_hunks }}
+    secrets: inherit
