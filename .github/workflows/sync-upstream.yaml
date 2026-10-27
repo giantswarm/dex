@@ -1,0 +1,246 @@
+name: Sync with upstream
+
+# Fork (giantswarm/dex): the weekly re-pin of the consumed branch `giantswarm`
+# (FORK.md, "Re-pin"). Fast-forwards the mirror (master, the v* branches and
+# tags, scripts/fork/mirror.sh) to upstream, rebases the carried commits onto the
+# upstream head (scripts/fork/repin.sh), checks that every carried hunk is in
+# the result (scripts/fork/hunks.py), lets fork-ci.yaml test the candidate
+# branch, and force-pushes the consumed branch. When a carried commit conflicts
+# or a check fails it opens a pull request against the consumed branch that
+# names the cause, and pushes nothing else.
+#
+# GitHub starts scheduled and dispatched runs only from the default branch.
+# While that is still the old fork's `main`, a short workflow there calls this
+# one at `giantswarm` (workflow_call). Once `giantswarm` is the default branch,
+# the schedule and the dispatch below take over.
+#
+# A re-pin a carried commit blocks is rebased by hand onto a `sync/**` branch
+# (FORK.md, "Manual re-pin") and landed by dispatching this workflow with that
+# branch as `candidate` and the upstream commit it sits on as `upstream_ref`:
+# scripts/fork/take-candidate.sh checks it in place of the rebase, and the same
+# wait for ci-ok and the same force-with-lease land it.
+#
+# Who pushes matters. The ledger is pushed with GITHUB_TOKEN (no workflow
+# reacts). Everything else (the mirror, the candidate, the consumed branch)
+# is pushed with a token of the org's heraldbot GitHub App: GITHUB_TOKEN may
+# not update a workflow file, not even in a mirrored upstream commit, and the
+# App may. An App push starts workflows, wanted on the candidate (fork-ci.yaml)
+# and unwanted on the mirrored refs, where upstream's own files would run. The
+# sync cancels those right away.
+
+on:
+  schedule:
+    - cron: '0 5 * * 1' # Monday 05:00 UTC
+  workflow_dispatch:
+    inputs: &inputs
+      upstream_ref:
+        description: 'Upstream ref to re-pin onto (the mirror master always follows upstream master)'
+        type: string
+        default: master
+      dry_run:
+        description: 'Rebase and report only, push nothing. A run you start defaults to this, the Monday run does not'
+        type: boolean
+        default: true
+      mirror_only:
+        description: 'Fast-forward the mirror (master, v* branches, tags) and stop'
+        type: boolean
+        default: false
+      candidate:
+        description: 'A sync/** branch rebased by hand onto upstream_ref (a ref or a full commit SHA) to land instead of rebasing (FORK.md, "Manual re-pin")'
+        type: string
+        default: ''
+      accept_hunks:
+        description: 'Carried hunks the re-pin drops or reworks on purpose: hunk ids, or a commit for all its hunks, as scripts/fork/hunks.py reports them (FORK.md, "Re-pin")'
+        type: string
+        default: ''
+  workflow_call:
+    inputs: *inputs
+
+permissions:
+  contents: write
+  actions: write # cancel the runs upstream's workflow files start on freshly mirrored refs
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  CONSUMED: giantswarm
+  UPSTREAM_REPO: dexidp/dex
+  UPSTREAM_REF: ${{ inputs.upstream_ref || 'master' }}
+  DRY_RUN: ${{ inputs.dry_run == true }}
+  MIRROR_ONLY: ${{ inputs.mirror_only == true }}
+  TAKE_CANDIDATE: ${{ inputs.candidate }}
+  ACCEPT_HUNKS: ${{ inputs.accept_hunks }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.CONSUMED }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Mint the bot token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.HERALD_CLIENT_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+
+      - name: Prepare
+        run: |
+          git config user.name "HeraldBot[bot]"
+          git config user.email "149080493+heraldbot[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch -q upstream master
+          [ "$UPSTREAM_REF" = master ] || git fetch -q upstream "$UPSTREAM_REF"
+          git fetch -q origin "$CONSUMED"
+
+      - name: Fast-forward the mirror (master, v* branches, tags)
+        env:
+          BOT_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          date -u +%FT%TZ > mirror-started-at
+          if [ "$DRY_RUN" = true ]; then
+            scripts/fork/mirror.sh "$BOT_TOKEN" --check
+          else
+            scripts/fork/mirror.sh "$BOT_TOKEN"
+          fi
+
+      - name: Quiet the mirror
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/fork/mirror-quiet.sh "$(cat mirror-started-at)" mirror-pushed.txt
+
+      - name: Rebase the carried commits, or take the candidate
+        id: repin
+        if: env.MIRROR_ONLY != 'true'
+        run: |
+          set +e
+          if [ -n "$TAKE_CANDIDATE" ]; then
+            CANDIDATE="$TAKE_CANDIDATE" UPSTREAM_REMOTE=upstream REPORT=repin-report.md REPORT_ENV=repin-report.env scripts/fork/take-candidate.sh
+          else
+            UPSTREAM_REMOTE=upstream REPORT=repin-report.md REPORT_ENV=repin-report.env scripts/fork/repin.sh
+          fi
+          rc=$?
+          set -e
+          cat repin-report.md >> "$GITHUB_STEP_SUMMARY"
+          cat repin-report.env >> "$GITHUB_OUTPUT"
+          case $rc in 0|2) ;; *) exit "$rc" ;; esac
+
+      - name: Dry run
+        if: env.DRY_RUN == 'true' && env.MIRROR_ONLY != 'true'
+        run: |
+          echo "dry run: status=${{ steps.repin.outputs.status }}; nothing pushed"
+          [ "${{ steps.repin.outputs.status }}" != conflict ]
+
+      - name: On a conflict, open the pull request
+        if: env.DRY_RUN != 'true' && steps.repin.outputs.status == 'conflict'
+        env:
+          BOT_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          CANDIDATE: ${{ steps.repin.outputs.candidate }}
+          TARGET: ${{ steps.repin.outputs.target }}
+          CONFLICT: ${{ steps.repin.outputs.conflict }}
+          CONFLICT_SUBJECT: ${{ steps.repin.outputs.conflict_subject }}
+        run: |
+          # A signal, not a proposal: the branch is the consumed head plus one empty
+          # commit, so the pull request can exist. [skip ci] keeps the checks quiet.
+          git checkout -q -B "$CANDIDATE" "origin/$CONSUMED"
+          git commit -q --allow-empty \
+            -m "sync: upstream ${TARGET:0:7} conflicts with carried commit ${CONFLICT:0:7} [skip ci]" \
+            -m "${CONFLICT_SUBJECT}" -m "Details and the manual procedure: ${RUN_URL}"
+          scripts/fork/git-push-as.sh "$BOT_TOKEN" origin "$CANDIDATE"
+          {
+            echo "The automated re-pin stopped: a carried commit does not apply onto upstream \`${TARGET:0:7}\`. Nothing was pushed to \`${CONSUMED}\`."
+            echo
+            cat repin-report.md
+            echo
+            echo "Finish by hand (FORK.md, \"Manual re-pin\"), then close this pull request. Do not merge it. Run: ${RUN_URL}"
+          } > pr-body.md
+          # --repo: in a checkout of a fork, gh otherwise targets the parent repository.
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "$CONSUMED" --head "$CANDIDATE" \
+            --title "sync: re-pin onto upstream ${TARGET:0:7} blocked: ${CONFLICT_SUBJECT}" \
+            --body-file pr-body.md
+          exit 1
+
+      - name: Push the candidate
+        if: env.DRY_RUN != 'true' && env.TAKE_CANDIDATE == '' && steps.repin.outputs.status == 'rebased'
+        env:
+          BOT_TOKEN: ${{ steps.app.outputs.token }}
+        run: scripts/fork/git-push-as.sh "$BOT_TOKEN" origin "${{ steps.repin.outputs.candidate }}"
+
+      - name: Wait for ci-ok on the candidate
+        if: env.DRY_RUN != 'true' && steps.repin.outputs.status == 'rebased'
+        id: checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.repin.outputs.new_head }}
+        run: |
+          deadline=$((SECONDS + 90 * 60))
+          while :; do
+            state=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.name == "ci-ok") | {(.name): "\(.status)/\(.conclusion)"}] | add // {}')
+            echo "$(date -u +%H:%M:%S) ${state}"
+            if jq -e '."ci-ok" == "completed/success"' <<< "$state" > /dev/null; then
+              echo "result=green" >> "$GITHUB_OUTPUT"; break
+            fi
+            if jq -e '."ci-ok" != null and (."ci-ok" | startswith("completed/"))' <<< "$state" > /dev/null; then
+              echo "result=red" >> "$GITHUB_OUTPUT"; echo "state=${state}" >> "$GITHUB_OUTPUT"; break
+            fi
+            if [ "$SECONDS" -gt "$deadline" ]; then
+              echo "result=timeout" >> "$GITHUB_OUTPUT"; echo "state=${state}" >> "$GITHUB_OUTPUT"; break
+            fi
+            sleep 60
+          done
+
+      - name: Land the re-pin
+        if: steps.checks.outputs.result == 'green'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BOT_TOKEN: ${{ steps.app.outputs.token }}
+          CANDIDATE: ${{ steps.repin.outputs.candidate }}
+          NEW_HEAD: ${{ steps.repin.outputs.new_head }}
+          OLD_HEAD: ${{ steps.repin.outputs.old_head }}
+          PIN: ${{ steps.repin.outputs.pin }}
+          TARGET: ${{ steps.repin.outputs.target }}
+        run: |
+          scripts/fork/git-push-as.sh "$BOT_TOKEN" origin \
+            --force-with-lease="refs/heads/${CONSUMED}:${OLD_HEAD}" "${NEW_HEAD}:refs/heads/${CONSUMED}"
+          scripts/fork/git-push-as.sh "$BOT_TOKEN" origin --delete "$CANDIDATE"
+          dropped="${{ steps.repin.outputs.dropped }}"
+          scripts/fork/ledger-append.sh re-pins.md \
+            "| $(date -u +'%Y-%m-%d %H:%M') | \`${PIN:0:7}\` | \`${TARGET:0:7}\` ($(git show -s --format=%cs "$TARGET")) | \`${OLD_HEAD:0:7}\` → \`${NEW_HEAD:0:7}\` | ${{ steps.repin.outputs.replayed_count }} | ${dropped:-none} | [run](${RUN_URL}) |"
+          echo "### Landed" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${CONSUMED}\` is \`${NEW_HEAD:0:7}\` (was \`${OLD_HEAD:0:7}\`)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: On failed checks, open the pull request
+        if: steps.checks.outputs.result == 'red' || steps.checks.outputs.result == 'timeout'
+        env:
+          BOT_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          CANDIDATE: ${{ steps.repin.outputs.candidate }}
+          TARGET: ${{ steps.repin.outputs.target }}
+          RESULT: ${{ steps.checks.outputs.result }}
+          STATE: ${{ steps.checks.outputs.state }}
+        run: |
+          {
+            echo "The automated re-pin stopped: the rebased candidate did not pass the checks (${RESULT}: \`${STATE}\`). Nothing was pushed to \`${CONSUMED}\`."
+            echo
+            echo "The checks ran on this branch's head; their runs are in the Actions tab for \`${CANDIDATE}\`."
+            echo
+            cat repin-report.md
+            echo
+            echo "Finish by hand (FORK.md, \"Manual re-pin\"): fix on this branch, let the checks pass, dispatch this workflow with it as \`candidate\`, then close this pull request. Do not merge it. Run: ${RUN_URL}"
+          } > pr-body.md
+          # --repo: in a checkout of a fork, gh otherwise targets the parent repository.
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "$CONSUMED" --head "$CANDIDATE" \
+            --title "sync: re-pin onto upstream ${TARGET:0:7} blocked: checks ${RESULT}" \
+            --body-file pr-body.md
+          exit 1
