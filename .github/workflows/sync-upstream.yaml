@@ -6,6 +6,8 @@ name: Sync with upstream
 # becomes the default branch.
 
 on:
+  schedule:
+    - cron: '0 5 * * 1' # Monday 05:00 UTC, as in kagent-upstream
   workflow_dispatch:
     inputs:
       upstream_ref:
@@ -37,7 +39,9 @@ jobs:
     uses: giantswarm/dex/.github/workflows/sync-upstream.yaml@giantswarm
     with:
       upstream_ref: ${{ inputs.upstream_ref }}
-      dry_run: ${{ inputs.dry_run }}
+      # A scheduled run has no inputs. Without this, the called workflow would
+      # fall back to its own default, which is a dry run.
+      dry_run: ${{ github.event_name != 'schedule' && inputs.dry_run }}
       mirror_only: ${{ inputs.mirror_only }}
       candidate: ${{ inputs.candidate }}
       accept_hunks: ${{ inputs.accept_hunks }}
