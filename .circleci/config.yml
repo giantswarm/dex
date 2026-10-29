@@ -20,7 +20,7 @@ version: 2.1
 # there would be read as versions of this line.
 
 orbs:
-  architect: giantswarm/architect@10.16.6
+  architect: giantswarm/architect@10.16.7
 
 # The one registry the line publishes to: visibility, host, the context's
 # credential variables, and whether dev builds are pushed. One line, no
