@@ -9,6 +9,30 @@ This repository is the Dex that Giant Swarm runs through [dex-app](https://githu
 | Upstream pin | `b02ead0b` (upstream `master`, 2026-10-26). `git merge-base giantswarm master` shows it. |
 | Tracking | giantswarm/giantswarm#34224 (the fork), giantswarm/giantswarm#38017 (sending the token exchange fixes upstream) |
 
+## What is published
+
+`.circleci/config.yml` builds upstream's `Dockerfile` as it is, with the architect orb's stock jobs. It builds one image per architecture (amd64 and arm64, each on a machine of that architecture), then joins them into one tagged index, signs it with cosign keyless and attests it.
+
+| | |
+|---|---|
+| Image | `gsoci.azurecr.io/giantswarm/dex/dex:<version>`, multi-arch. The index carries the annotation `io.giantswarm.upstream.version=master@<pin sha7>`. Note that `gsoci.azurecr.io/giantswarm/dex` is something else: retagger's copy of upstream's images, and the old fork's builds from `main`. |
+| Dev version, on every push to `giantswarm` | gitsemver's dev shape, `X.Y.Z-r<branch hash>t<YYYYMMDDHHMMSS>h<sha7>`. `X.Y.Z` is the next patch above the newest stable tag reachable from the commit. That's upstream's mirrored tag until the line's first release is on the branch. |
+| Release version, on a tag `v3.Y.Z` or `v3.Y.Z-rc.N` | the tag without `v` |
+
+Every other branch of the line, like a pull request or a `sync/**` candidate, runs the same two builds and pushes nothing. The mirrored upstream refs (`master`, `v2.*.x`, upstream's tags) build nothing.
+
+### Release scheme
+
+A release is a tag `vX.Y.Z` on `giantswarm`. The version is the line's own semver and says nothing about upstream's version. The pin above and the image's annotation record which upstream it's built from. A release candidate is `vX.Y.Z-rc.N`.
+
+The line's versions start at `3.0.0`, one major above upstream's. Upstream's tags are `v2.*`, and the mirror copies them into this repository, so the two must never use the same name. If upstream ever starts a `v3`, the line moves to its next major first.
+
+Cut a tag only after the dev build of the same commit has been tested with dex-app:
+
+```bash
+git tag -a v3.0.0 -m v3.0.0 <sha> && git push origin v3.0.0
+```
+
 ## Carried commits
 
 | Carried commit (subject) | Why we need it | Upstream |
@@ -32,6 +56,12 @@ One run does this:
 5. If one of our commits conflicts with upstream, or `ci-ok` fails, nothing is pushed to `giantswarm`. Instead the run opens a pull request against `giantswarm` that names the commit and the files, or the failed check. Finish the re-pin by hand (see "Manual re-pin"), then close that pull request. Don't merge it.
 
 After a re-pin that dropped a commit, remove its row from the table above in a pull request, and update the pin.
+
+After every re-pin, move the pin annotation in `.circleci/config.yml` to the new pin in a pull request against `giantswarm`. The sync doesn't edit it:
+
+```bash
+sed -i "s|upstream.version=master@[0-9a-f]*|upstream.version=master@$(git merge-base HEAD master | cut -c1-7)|" .circleci/config.yml
+```
 
 ### Manual re-pin
 

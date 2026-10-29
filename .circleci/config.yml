@@ -1,0 +1,146 @@
+version: 2.1
+
+# Fork (giantswarm/dex, branch giantswarm): publishes the line's image to
+# gsoci.azurecr.io (FORK.md, "What is published"). Hand-written, like
+# kagent-upstream's: upstream's GitHub Actions and fork-ci.yaml run the tests,
+# this pipeline only publishes.
+#
+# Two workflows. `publish` runs on the consumed branch `giantswarm` (a dev build
+# in gitsemver's dev shape) and on the line's release tags `vX.Y.Z` and
+# `vX.Y.Z-rc.N` (the version is the tag without `v`; FORK.md, "Release
+# scheme"): the image is built natively per architecture by the orb's
+# `build-image` job, amd64 and arm64, pushed by digest, and joined into one
+# tagged index, signed and attested, by its `push-to-registries` job.
+# `validate` runs the same two builds with `push: false` on every other branch
+# of the line (pull requests, `sync/**` candidates) and publishes nothing. The
+# mirrored upstream refs (`master`, `v2.*.x`, upstream's tags) run nothing.
+#
+# The image is gsoci.azurecr.io/giantswarm/dex/dex, not giantswarm/dex:
+# retagger copies upstream's images to giantswarm/dex, and upstream's tags
+# there would be read as versions of this line.
+
+orbs:
+  architect: giantswarm/architect@10.16.6
+
+# The one registry the line publishes to: visibility, host, the context's
+# credential variables, and whether dev builds are pushed. One line, no
+# trailing newline: the orb reads it line by line.
+registries: &registries |-
+  public gsoci.azurecr.io ACR_GSOCI_USERNAME ACR_GSOCI_PASSWORD true
+
+# The upstream commit the consumed branch is pinned to (`git merge-base
+# giantswarm master`), stamped on every published index so a consumer reads
+# which Dex it runs from the registry. The sync does not edit it: after a
+# landed re-pin, a pull request against `giantswarm` moves it (FORK.md,
+# "Re-pin").
+annotations: &annotations |-
+  index:io.giantswarm.upstream.version=master@b02ead0
+
+# What upstream's Makefile passes to `docker build`: the Dockerfile builds the
+# binary with `make release-binary`, which stamps VERSION into main.version.
+# ${DOCKER_IMAGE_TAG} is expanded by the orb at build time.
+build-args: &build-args |-
+  VERSION=${DOCKER_IMAGE_TAG}
+
+# `publish`: the consumed branch and the line's release tags. Every job of the
+# workflow carries the same filters (a tag runs only jobs that admit it).
+publish-filters: &publish-filters
+  branches:
+    only: giantswarm
+  tags:
+    only: /^v3\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+
+# `validate`: every other branch of the line. The mirrored upstream branches,
+# the old fork's `main` and the `ledger` branch are excluded. Upstream's tags
+# run nothing because no tag filter admits them.
+validate-filters: &validate-filters
+  branches:
+    ignore: /^(giantswarm|main|master|ledger|v[0-9]+\.[0-9]+\.x)$/
+
+# A branch pipeline whose commit already carries a release tag of the line
+# builds nothing: the tag's own pipeline publishes that version, and the orb's
+# image-prepare-tag refuses a release version on a branch pipeline with a
+# failure. Run ahead of every job, this step ends such a job green before
+# checkout. A tag pipeline and an untagged commit pass through.
+skip-tagged-commit: &skip-tagged-commit
+  - run:
+      name: Skip a branch build of a commit the tag pipeline publishes
+      command: |
+        set -euo pipefail
+        [ -z "${CIRCLE_TAG:-}" ] || exit 0
+        tags=$(GIT_CONFIG_GLOBAL=/dev/null git ls-remote --tags \
+            "https://github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}.git" |
+          awk -v sha="${CIRCLE_SHA1}" '$1 == sha { sub(/^refs\/tags\//, "", $2); sub(/\^\{\}$/, "", $2); print $2 }' |
+          grep -E '^v3\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$' || true)
+        if [ -n "${tags}" ]; then
+          echo "Commit ${CIRCLE_SHA1:0:7} carries the release tag(s) ${tags//$'\n'/ }: its tag pipeline publishes it, this branch job builds nothing."
+          circleci-agent step halt
+        fi
+
+workflows:
+  # One native build per architecture (the resource class is the architecture:
+  # `large` is amd64, `arm.large` is arm64), pushed by digest, then one merge
+  # job that tags the index with the version, signs it and its per-platform
+  # SBOM attestations, and stamps the pin annotation.
+  publish:
+    jobs:
+      - architect/build-image:
+          name: build-dex-amd64
+          context: architect
+          image: giantswarm/dex/dex
+          platform: linux/amd64
+          resource_class: large
+          dockerfile: Dockerfile
+          build-context: .
+          build-args: *build-args
+          registries-data: *registries
+          pre-steps: *skip-tagged-commit
+          filters: *publish-filters
+      - architect/build-image:
+          name: build-dex-arm64
+          context: architect
+          image: giantswarm/dex/dex
+          platform: linux/arm64
+          resource_class: arm.large
+          dockerfile: Dockerfile
+          build-context: .
+          build-args: *build-args
+          registries-data: *registries
+          pre-steps: *skip-tagged-commit
+          filters: *publish-filters
+      - architect/push-to-registries:
+          name: push-dex
+          context: architect
+          image: giantswarm/dex/dex
+          merge-digests: true
+          platforms: linux/amd64,linux/arm64
+          registries-data: *registries
+          annotations: *annotations
+          requires: [build-dex-amd64, build-dex-arm64]
+          pre-steps: *skip-tagged-commit
+          filters: *publish-filters
+
+  validate:
+    jobs:
+      - architect/build-image:
+          name: validate-dex-amd64
+          image: giantswarm/dex/dex
+          platform: linux/amd64
+          resource_class: large
+          dockerfile: Dockerfile
+          build-context: .
+          build-args: *build-args
+          push: false
+          pre-steps: *skip-tagged-commit
+          filters: *validate-filters
+      - architect/build-image:
+          name: validate-dex-arm64
+          image: giantswarm/dex/dex
+          platform: linux/arm64
+          resource_class: arm.large
+          dockerfile: Dockerfile
+          build-context: .
+          build-args: *build-args
+          push: false
+          pre-steps: *skip-tagged-commit
+          filters: *validate-filters
