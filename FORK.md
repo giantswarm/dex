@@ -6,7 +6,7 @@ This repository is the Dex that Giant Swarm runs through [dex-app](https://githu
 |---|---|
 | Consumed branch | `giantswarm`, upstream at the pin plus one commit per patch. Release tags are cut from it. It becomes the default branch when the old `main` is retired. Until then dex-app still uses the image built from `main`. |
 | Mirror | `master` and upstream's tags, read-only copies of upstream. Never commit to them. |
-| Upstream pin | `416279bf` (upstream `master`, 2026-10-21). `git merge-base giantswarm master` shows it. |
+| Upstream pin | `b02ead0b` (upstream `master`, 2026-10-26). `git merge-base giantswarm master` shows it. |
 | Tracking | giantswarm/giantswarm#34224 (the fork), giantswarm/giantswarm#38017 (sending the token exchange fixes upstream) |
 
 ## Carried commits
