@@ -4,22 +4,25 @@
 # that it is a re-pin onto the upstream ref, and report like repin.sh, so the
 # sync workflow waits for its checks and lands it the same way.
 #
-#   CONSUMED=giantswarm UPSTREAM_REMOTE=upstream UPSTREAM_REF=<sha or ref> \
-#   CANDIDATE=sync/upstream-<date>-<sha7>-manual scripts/fork/take-candidate.sh
+#   CONSUMED=giantswarm UPSTREAM_REMOTE=upstream UPSTREAM_REF=<vX.Y.Z> \
+#   CANDIDATE=sync/upstream-<date>-<tag>-manual scripts/fork/take-candidate.sh
 #
 # Exit 0: the candidate is checked out detached (status=rebased) or it is
 # already the consumed head (status=up-to-date). Exit 1: the candidate is not a
-# re-pin onto the upstream ref, or it lost a carried hunk that ACCEPT_HUNKS does
+# re-pin onto the upstream release, or it lost a carried hunk that ACCEPT_HUNKS does
 # not name (status=refused, the reason in the report).
 # The report is written to $REPORT (markdown) and $REPORT_ENV (key=value).
 set -euo pipefail
 
 CONSUMED=${CONSUMED:-giantswarm}
 UPSTREAM_REMOTE=${UPSTREAM_REMOTE:-upstream}
-UPSTREAM_REF=${UPSTREAM_REF:-master}
+UPSTREAM_REF=${UPSTREAM_REF:?UPSTREAM_REF names the upstream release vX.Y.Z the candidate sits on}
 REPORT=${REPORT:-repin-report.md}
 REPORT_ENV=${REPORT_ENV:-repin-report.env}
 : "${CANDIDATE:?CANDIDATE names the candidate branch}"
+here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=scripts/fork/releases.sh
+. "${here}/releases.sh"
 
 short() { git rev-parse --short=7 "$1"; }
 subject() { git show -s --format=%s "$1"; }
@@ -40,16 +43,20 @@ case $CANDIDATE in
 esac
 
 git fetch -q origin "$CONSUMED" "refs/heads/$CANDIDATE:refs/remotes/origin/$CANDIDATE"
-git fetch -q "$UPSTREAM_REMOTE" "$UPSTREAM_REF"
+git fetch -q "$UPSTREAM_REMOTE" '+refs/tags/v*:refs/tags/v*'
+is_release "$UPSTREAM_REF" || refuse "\`${UPSTREAM_REF}\` is not an upstream release tag vX.Y.Z."
 head=$(git rev-parse "origin/$CONSUMED")
-target=$(git rev-parse FETCH_HEAD)
+target=$(git rev-parse "${UPSTREAM_REF}^{commit}")
 new_head=$(git rev-parse "origin/$CANDIDATE")
-pin=$(git merge-base "$head" "$target")
+pin_tag=$(pinned_release "$head")
+pin=$(git rev-parse "${pin_tag}^{commit}")
 
 env_out consumed "$CONSUMED"
 env_out old_head "$head"
 env_out pin "$pin"
+env_out pin_tag "$pin_tag"
 env_out target "$target"
+env_out target_tag "$UPSTREAM_REF"
 env_out candidate "$CANDIDATE"
 
 if [ "$new_head" = "$head" ]; then
@@ -57,10 +64,13 @@ if [ "$new_head" = "$head" ]; then
   env_out status up-to-date
   exit 0
 fi
-# The candidate sits on exactly the upstream ref: no upstream commit past it
-# and no carried commit below it.
-if [ "$(git merge-base "$new_head" "$target")" != "$target" ]; then
-  refuse "\`${CANDIDATE}\` (\`$(short "$new_head")\`) does not contain upstream \`$(short "$target")\`."
+if older_release "$UPSTREAM_REF" "$pin_tag"; then
+  refuse "Upstream \`${UPSTREAM_REF}\` is older than the pin \`${pin_tag}\`: a re-pin only moves forward."
+fi
+# The candidate sits on exactly the upstream release: its nearest release is
+# that one, and it contains it.
+if [ "$(git merge-base "$new_head" "$target")" != "$target" ] || [ "$(pinned_release "$new_head")" != "$UPSTREAM_REF" ]; then
+  refuse "\`${CANDIDATE}\` (\`$(short "$new_head")\`) does not sit on upstream \`${UPSTREAM_REF}\`."
 fi
 if git merge-base --is-ancestor "$head" "$new_head"; then
   refuse "\`${CANDIDATE}\` contains the consumed head \`$(short "$head")\`: a re-pin rebases the carried commits, it does not merge them."
@@ -84,10 +94,10 @@ for c in "${carried[@]}"; do
 done
 
 {
-  printf '### Re-pin `%s` onto `%s` from the candidate `%s`\n\n' "$CONSUMED" "$(short "$target")" "$CANDIDATE"
-  printf '| | commit |\n|---|---|\n'
-  printf '| previous pin | `%s` |\n| new pin | `%s` |\n' "$(short "$pin")" "$(short "$target")"
-  printf '| consumed head before | `%s` |\n| candidate head | `%s` |\n\n' "$(short "$head")" "$(short "$new_head")"
+  printf '### Re-pin `%s` onto upstream `%s` from the candidate `%s`\n\n' "$CONSUMED" "$UPSTREAM_REF" "$CANDIDATE"
+  printf '| | release | commit |\n|---|---|---|\n'
+  printf '| previous pin | `%s` | `%s` |\n| new pin | `%s` | `%s` |\n' "$pin_tag" "$(short "$pin")" "$UPSTREAM_REF" "$(short "$target")"
+  printf '| consumed head before | | `%s` |\n| candidate head | | `%s` |\n\n' "$(short "$head")" "$(short "$new_head")"
   printf '#### Replayed (%d)\n\n' "${#replayed[@]}"
   for c in "${replayed[@]}"; do item "$c"; done
   printf '\n'

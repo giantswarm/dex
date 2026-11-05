@@ -3,7 +3,7 @@ name: Sync with upstream
 # Fork (giantswarm/dex): the weekly re-pin of the consumed branch `giantswarm`
 # (FORK.md, "Re-pin"). Fast-forwards the mirror (master, the v* branches and
 # tags, scripts/fork/mirror.sh) to upstream, rebases the carried commits onto the
-# upstream head (scripts/fork/repin.sh), checks that every carried hunk is in
+# newest upstream release (scripts/fork/repin.sh), checks that every carried hunk is in
 # the result (scripts/fork/hunks.py), lets fork-ci.yaml test the candidate
 # branch, and force-pushes the consumed branch. When a carried commit conflicts
 # or a check fails it opens a pull request against the consumed branch that
@@ -16,7 +16,7 @@ name: Sync with upstream
 #
 # A re-pin a carried commit blocks is rebased by hand onto a `sync/**` branch
 # (FORK.md, "Manual re-pin") and landed by dispatching this workflow with that
-# branch as `candidate` and the upstream commit it sits on as `upstream_ref`:
+# branch as `candidate` and the upstream release it sits on as `upstream_ref`:
 # scripts/fork/take-candidate.sh checks it in place of the rebase, and the same
 # wait for ci-ok and the same force-with-lease land it.
 #
@@ -34,9 +34,9 @@ on:
   workflow_dispatch:
     inputs: &inputs
       upstream_ref:
-        description: 'Upstream ref to re-pin onto (the mirror master always follows upstream master)'
+        description: 'Upstream release tag vX.Y.Z to re-pin onto, or latest for the newest (the mirror master always follows upstream master)'
         type: string
-        default: master
+        default: latest
       dry_run:
         description: 'Rebase and report only, push nothing. A run you start defaults to this, the Monday run does not'
         type: boolean
@@ -46,7 +46,7 @@ on:
         type: boolean
         default: false
       candidate:
-        description: 'A sync/** branch rebased by hand onto upstream_ref (a ref or a full commit SHA) to land instead of rebasing (FORK.md, "Manual re-pin")'
+        description: 'A sync/** branch rebased by hand onto upstream_ref (a release tag vX.Y.Z) to land instead of rebasing (FORK.md, "Manual re-pin")'
         type: string
         default: ''
       accept_hunks:
@@ -67,7 +67,7 @@ concurrency:
 env:
   CONSUMED: giantswarm
   UPSTREAM_REPO: dexidp/dex
-  UPSTREAM_REF: ${{ inputs.upstream_ref || 'master' }}
+  UPSTREAM_REF: ${{ inputs.upstream_ref || 'latest' }}
   DRY_RUN: ${{ inputs.dry_run == true }}
   MIRROR_ONLY: ${{ inputs.mirror_only == true }}
   TAKE_CANDIDATE: ${{ inputs.candidate }}
@@ -98,7 +98,6 @@ jobs:
           git config user.email "149080493+heraldbot[bot]@users.noreply.github.com"
           git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
           git fetch -q upstream master
-          [ "$UPSTREAM_REF" = master ] || git fetch -q upstream "$UPSTREAM_REF"
           git fetch -q origin "$CONSUMED"
 
       - name: Fast-forward the mirror (master, v* branches, tags)
@@ -146,7 +145,7 @@ jobs:
           BOT_TOKEN: ${{ steps.app.outputs.token }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
           CANDIDATE: ${{ steps.repin.outputs.candidate }}
-          TARGET: ${{ steps.repin.outputs.target }}
+          TARGET_TAG: ${{ steps.repin.outputs.target_tag }}
           CONFLICT: ${{ steps.repin.outputs.conflict }}
           CONFLICT_SUBJECT: ${{ steps.repin.outputs.conflict_subject }}
         run: |
@@ -154,11 +153,11 @@ jobs:
           # commit, so the pull request can exist. [skip ci] keeps the checks quiet.
           git checkout -q -B "$CANDIDATE" "origin/$CONSUMED"
           git commit -q --allow-empty \
-            -m "sync: upstream ${TARGET:0:7} conflicts with carried commit ${CONFLICT:0:7} [skip ci]" \
+            -m "sync: upstream ${TARGET_TAG} conflicts with carried commit ${CONFLICT:0:7} [skip ci]" \
             -m "${CONFLICT_SUBJECT}" -m "Details and the manual procedure: ${RUN_URL}"
           scripts/fork/git-push-as.sh "$BOT_TOKEN" origin "$CANDIDATE"
           {
-            echo "The automated re-pin stopped: a carried commit does not apply onto upstream \`${TARGET:0:7}\`. Nothing was pushed to \`${CONSUMED}\`."
+            echo "The automated re-pin stopped: a carried commit does not apply onto upstream \`${TARGET_TAG}\`. Nothing was pushed to \`${CONSUMED}\`."
             echo
             cat repin-report.md
             echo
@@ -166,7 +165,7 @@ jobs:
           } > pr-body.md
           # --repo: in a checkout of a fork, gh otherwise targets the parent repository.
           gh pr create --repo "$GITHUB_REPOSITORY" --base "$CONSUMED" --head "$CANDIDATE" \
-            --title "sync: re-pin onto upstream ${TARGET:0:7} blocked: ${CONFLICT_SUBJECT}" \
+            --title "sync: re-pin onto upstream ${TARGET_TAG} blocked: ${CONFLICT_SUBJECT}" \
             --body-file pr-body.md
           exit 1
 
@@ -208,15 +207,16 @@ jobs:
           CANDIDATE: ${{ steps.repin.outputs.candidate }}
           NEW_HEAD: ${{ steps.repin.outputs.new_head }}
           OLD_HEAD: ${{ steps.repin.outputs.old_head }}
-          PIN: ${{ steps.repin.outputs.pin }}
+          PIN_TAG: ${{ steps.repin.outputs.pin_tag }}
           TARGET: ${{ steps.repin.outputs.target }}
+          TARGET_TAG: ${{ steps.repin.outputs.target_tag }}
         run: |
           scripts/fork/git-push-as.sh "$BOT_TOKEN" origin \
             --force-with-lease="refs/heads/${CONSUMED}:${OLD_HEAD}" "${NEW_HEAD}:refs/heads/${CONSUMED}"
           scripts/fork/git-push-as.sh "$BOT_TOKEN" origin --delete "$CANDIDATE"
           dropped="${{ steps.repin.outputs.dropped }}"
           scripts/fork/ledger-append.sh re-pins.md \
-            "| $(date -u +'%Y-%m-%d %H:%M') | \`${PIN:0:7}\` | \`${TARGET:0:7}\` ($(git show -s --format=%cs "$TARGET")) | \`${OLD_HEAD:0:7}\` → \`${NEW_HEAD:0:7}\` | ${{ steps.repin.outputs.replayed_count }} | ${dropped:-none} | [run](${RUN_URL}) |"
+            "| $(date -u +'%Y-%m-%d %H:%M') | \`${PIN_TAG}\` | \`${TARGET_TAG}\` ($(git show -s --format=%cs "$TARGET")) | \`${OLD_HEAD:0:7}\` → \`${NEW_HEAD:0:7}\` | ${{ steps.repin.outputs.replayed_count }} | ${dropped:-none} | [run](${RUN_URL}) |"
           echo "### Landed" >> "$GITHUB_STEP_SUMMARY"
           echo "\`${CONSUMED}\` is \`${NEW_HEAD:0:7}\` (was \`${OLD_HEAD:0:7}\`)." >> "$GITHUB_STEP_SUMMARY"
 
@@ -226,7 +226,7 @@ jobs:
           BOT_TOKEN: ${{ steps.app.outputs.token }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
           CANDIDATE: ${{ steps.repin.outputs.candidate }}
-          TARGET: ${{ steps.repin.outputs.target }}
+          TARGET_TAG: ${{ steps.repin.outputs.target_tag }}
           RESULT: ${{ steps.checks.outputs.result }}
           STATE: ${{ steps.checks.outputs.state }}
         run: |
@@ -241,6 +241,6 @@ jobs:
           } > pr-body.md
           # --repo: in a checkout of a fork, gh otherwise targets the parent repository.
           gh pr create --repo "$GITHUB_REPOSITORY" --base "$CONSUMED" --head "$CANDIDATE" \
-            --title "sync: re-pin onto upstream ${TARGET:0:7} blocked: checks ${RESULT}" \
+            --title "sync: re-pin onto upstream ${TARGET_TAG} blocked: checks ${RESULT}" \
             --body-file pr-body.md
           exit 1

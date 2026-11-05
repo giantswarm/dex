@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # The git half of the re-pin (FORK.md, "Re-pin"): rebase the consumed branch's
-# carried commits onto the upstream head into a candidate branch and report.
+# carried commits onto an upstream release into a candidate branch and report.
 # Pushing, testing and landing the candidate belong to the sync workflow, or
 # to the person running the same steps by hand.
 #
-#   CONSUMED=giantswarm UPSTREAM_REMOTE=upstream UPSTREAM_REF=master \
-#   CANDIDATE=sync/upstream-<date>-<sha7> scripts/fork/repin.sh
+#   CONSUMED=giantswarm UPSTREAM_REMOTE=upstream UPSTREAM_REF=latest \
+#   CANDIDATE=sync/upstream-<date>-<tag> scripts/fork/repin.sh
+#
+# UPSTREAM_REF is an upstream release tag (vX.Y.Z), or `latest` for the newest.
 #
 # Exit 0: the candidate branch exists locally (status=rebased) or nothing is to
 # do (status=up-to-date). Exit 2: a carried commit conflicts (status=conflict).
@@ -17,16 +19,27 @@ set -euo pipefail
 
 CONSUMED=${CONSUMED:-giantswarm}
 UPSTREAM_REMOTE=${UPSTREAM_REMOTE:-upstream}
-UPSTREAM_REF=${UPSTREAM_REF:-master}
+UPSTREAM_REF=${UPSTREAM_REF:-latest}
 REPORT=${REPORT:-repin-report.md}
 REPORT_ENV=${REPORT_ENV:-repin-report.env}
+here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=scripts/fork/releases.sh
+. "${here}/releases.sh"
 
 git fetch -q origin "$CONSUMED"
-git fetch -q "$UPSTREAM_REMOTE" "$UPSTREAM_REF"
+git fetch -q "$UPSTREAM_REMOTE" '+refs/tags/v*:refs/tags/v*'
 head=$(git rev-parse "origin/$CONSUMED")
-target=$(git rev-parse "$UPSTREAM_REMOTE/$UPSTREAM_REF")
-pin=$(git merge-base "$head" "$target")
-CANDIDATE=${CANDIDATE:-sync/upstream-$(date -u +%Y%m%d)-${target:0:7}}
+pin_tag=$(pinned_release "$head")
+target_tag=$UPSTREAM_REF
+[ "$target_tag" != latest ] || target_tag=$(newest_release)
+is_release "$target_tag" || { echo "UPSTREAM_REF ${target_tag} is not an upstream release tag vX.Y.Z" >&2; exit 1; }
+if older_release "$target_tag" "$pin_tag"; then
+  echo "UPSTREAM_REF ${target_tag} is older than the pin ${pin_tag}: a re-pin only moves forward" >&2
+  exit 1
+fi
+pin=$(git rev-parse "${pin_tag}^{commit}")
+target=$(git rev-parse "${target_tag}^{commit}")
+CANDIDATE=${CANDIDATE:-sync/upstream-$(date -u +%Y%m%d)-${target_tag}}
 
 short() { git rev-parse --short=7 "$1"; }
 subject() { git show -s --format=%s "$1"; }
@@ -41,15 +54,17 @@ mapfile -t carried < <(git rev-list --reverse --no-merges "$pin..$head")
 env_out consumed "$CONSUMED"
 env_out old_head "$head"
 env_out pin "$pin"
+env_out pin_tag "$pin_tag"
 env_out target "$target"
+env_out target_tag "$target_tag"
 env_out candidate "$CANDIDATE"
 
 {
-  printf '### Re-pin `%s` onto `%s/%s`\n\n' "$CONSUMED" "$UPSTREAM_REMOTE" "$UPSTREAM_REF"
-  printf '| | commit | date |\n|---|---|---|\n'
-  printf '| previous pin | `%s` | %s |\n' "$(short "$pin")" "$(cdate "$pin")"
-  printf '| new pin | `%s` | %s |\n' "$(short "$target")" "$(cdate "$target")"
-  printf '| consumed head before | `%s` | %s |\n\n' "$(short "$head")" "$(cdate "$head")"
+  printf '### Re-pin `%s` onto upstream `%s`\n\n' "$CONSUMED" "$target_tag"
+  printf '| | release | commit | date |\n|---|---|---|---|\n'
+  printf '| previous pin | `%s` | `%s` | %s |\n' "$pin_tag" "$(short "$pin")" "$(cdate "$pin")"
+  printf '| new pin | `%s` | `%s` | %s |\n' "$target_tag" "$(short "$target")" "$(cdate "$target")"
+  printf '| consumed head before | | `%s` | %s |\n\n' "$(short "$head")" "$(cdate "$head")"
   printf '%d upstream commits since the previous pin.\n\n' "$(git rev-list --count "$pin..$target")"
   printf '#### Carried commits (%d, in order)\n\n' "${#carried[@]}"
   for c in "${carried[@]}"; do item "$c"; done
@@ -57,13 +72,15 @@ env_out candidate "$CANDIDATE"
 } > "$REPORT"
 
 if [ "$pin" = "$target" ]; then
-  printf 'Nothing to do: the consumed branch is already based on the upstream head.\n' >> "$REPORT"
+  printf 'Nothing to do: the consumed branch is already based on upstream `%s`.\n' "$target_tag" >> "$REPORT"
   env_out status up-to-date
   exit 0
 fi
 
-# Upstream commits since the pin by patch id: names the upstream commit a
-# dropped carried commit was merged as.
+# Upstream commits in the new release and not in the pinned one, by patch id:
+# names the upstream commit a dropped carried commit was merged as. Upstream
+# cuts patch releases on a v*.x branch, so the pin need not be an ancestor of
+# the target, and the carried commits are pin..head, not merge-base..head.
 declare -A upstream_by_patch=()
 while read -r sha; do
   upstream_by_patch[$(patch_id "$sha")]=$sha
@@ -80,11 +97,11 @@ if ! git rebase --quiet --autosquash --no-reapply-cherry-picks --empty=drop --on
   git checkout -q --detach "$head"
   {
     printf '#### Conflict\n\n'
-    printf 'Carried commit `%s` %s does not apply onto `%s`.\n\n' "$(short "$conflict")" "$(subject "$conflict")" "$(short "$target")"
+    printf 'Carried commit `%s` %s does not apply onto upstream `%s`.\n\n' "$(short "$conflict")" "$(subject "$conflict")" "$target_tag"
     printf 'Conflicting files:\n\n'
     for f in "${files[@]}"; do printf -- '- `%s`\n' "$f"; done
     printf '\nCommits replayed before it: %d (`%s`).\n\n' "$(git rev-list --count "$target..$applied")" "$(short "$applied")"
-    printf 'Resolve by hand (FORK.md, "Manual re-pin"): rebase the consumed branch onto `%s`, fix the conflict in that commit, run the checks on a `sync/**` branch, force-push.\n' "$(short "$target")"
+    printf 'Resolve by hand (FORK.md, "Manual re-pin"): rebase the carried commits onto `%s`, fix the conflict in that commit, push the result to a `sync/**` branch, and start the sync workflow with it as `candidate`.\n' "$target_tag"
   } >> "$REPORT"
   env_out status conflict
   env_out conflict "$conflict"

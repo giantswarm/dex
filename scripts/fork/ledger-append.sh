@@ -16,7 +16,7 @@ header() {
     re-pins.md) cat <<'H'
 # Re-pins
 
-Every re-pin of the `giantswarm` branch onto upstream `master`, newest last (see FORK.md). A re-pin
+Every re-pin of the `giantswarm` branch onto an upstream release, newest last (see FORK.md). A re-pin
 that stopped (conflict, failed checks) is a pull request against `giantswarm`, not a row.
 
 | date (UTC) | previous pin | new pin | consumed head | replayed | dropped | run |
@@ -38,7 +38,7 @@ for attempt in 1 2 3 4 5; do
       git checkout -q -B ledger FETCH_HEAD
     else
       git checkout -q --orphan ledger
-      printf '# Ledger\n\nMachine-written records of the Giant Swarm Dex line (see FORK.md on the `giantswarm` branch): re-pins.md, every re-pin onto upstream `master`.\n' > README.md
+      printf '# Ledger\n\nMachine-written records of the Giant Swarm Dex line (see FORK.md on the `giantswarm` branch): re-pins.md, every re-pin onto an upstream release.\n' > README.md
     fi
     [ -f "$file" ] || header "$file" > "$file"
     printf '%s\n' "$row" >> "$file"
