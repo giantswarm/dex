@@ -1,0 +1,59 @@
+name: Fork CI
+
+# Fork (giantswarm/dex): the checks the sync waits for (sync-upstream.yaml,
+# "Wait for ci-ok"). Upstream's ci.yaml runs on pushes to `master` only, so it
+# never tests the `giantswarm` branch or a sync candidate. ci-ok is the one
+# check name the sync and branch protection look for.
+
+on:
+  push:
+    branches: [giantswarm, 'sync/**']
+  pull_request:
+    branches: [giantswarm]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: make test
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Download golangci-lint
+        run: make bin/golangci-lint
+
+      - name: Lint
+        run: make lint
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All checks passed
+        run: '[ "${{ needs.test.result }}" = success ] && [ "${{ needs.lint.result }}" = success ]'

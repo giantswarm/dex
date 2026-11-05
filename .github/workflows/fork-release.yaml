@@ -1,0 +1,62 @@
+name: Fork release
+
+# Fork (giantswarm/dex): tags every change of the consumed branch `giantswarm`
+# as our next release (FORK.md, "Release scheme"). A re-pin onto a new upstream
+# release vX.Y.Z gets vX.Y.Z-gs.1, a merged pull request the next -gs.N.
+# Changes that don't go into the image get no release
+# (scripts/fork/next-release.sh). CircleCI publishes the tag.
+#
+# The tag is pushed with the heraldbot App's token, like the sync's pushes:
+# CircleCI builds it either way, and other workflows can react to it.
+
+on:
+  push:
+    branches: [giantswarm]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Work out the release
+        id: next
+        run: scripts/fork/next-release.sh "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Mint the bot token
+        if: steps.next.outputs.tag != ''
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.HERALD_CLIENT_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+
+      - name: Tag the release
+        if: steps.next.outputs.tag != ''
+        env:
+          BOT_TOKEN: ${{ steps.app.outputs.token }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          git tag "$TAG" "$GITHUB_SHA"
+          scripts/fork/git-push-as.sh "$BOT_TOKEN" origin "refs/tags/${TAG}"
+          echo "Released \`${TAG}\` on \`${GITHUB_SHA:0:7}\`. CircleCI publishes gsoci.azurecr.io/giantswarm/dex/dex:${TAG#v}." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Say why there is no release
+        if: steps.next.outputs.skip != ''
+        env:
+          SKIP: ${{ steps.next.outputs.skip }}
+        run: |
+          echo "No release: ${SKIP}." >> "$GITHUB_STEP_SUMMARY"
