@@ -4,7 +4,8 @@ This repository is the Dex that Giant Swarm runs through [dex-app](https://githu
 
 | | |
 |---|---|
-| Consumed branch | `giantswarm`, the upstream release at the pin plus one commit per patch. Our release tags are cut from it. It becomes the default branch when the old `main` is retired. Until then dex-app still uses the image built from `main`. |
+| Consumed branch | `giantswarm`, the upstream release at the pin plus one commit per patch, and the default branch. Our release tags are cut from it. Every push to it needs a passing `ci-ok`, and only the sync's HeraldBot App may push to it without a pull request (the rulesets `devctl: line gate` and `devctl: default branch`, declared in `repositories/team-shield.yaml` of giantswarm/github). |
+| Old fork | `main`, the old fork. Its CircleCI still builds the image the stable dex-app release uses, until dex-app ships the image from `giantswarm` as a stable release. |
 | Mirror | `master`, the `v*` branches and upstream's tags, read-only copies of upstream. Never commit to them. |
 | Upstream pin | the nearest upstream release tag in the history of `giantswarm`. `git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' origin/giantswarm` shows it, and the newest row of `re-pins.md` on the `ledger` branch names it too. |
 | Tracking | giantswarm/giantswarm#34224 (the fork), giantswarm/giantswarm#38017 (sending the token exchange fixes upstream) |
@@ -51,7 +52,7 @@ Note also that `-gs.N` is a semver pre-release, so `2.46.1-gs.1` sorts below `2.
 
 A re-pin moves `giantswarm` onto a newer upstream release and replays our commits on top. The workflow `.github/workflows/sync-upstream.yaml` does it every Monday at 05:00 UTC, onto the newest upstream release. If there's no new release, the run does nothing. You can also start it by hand, with the inputs `upstream_ref` (a release tag like `v2.47.0`, or `latest`), `dry_run` and `mirror_only`. A run you start is a dry run unless you set `dry_run` to false. The Monday run is a real one.
 
-Note that GitHub starts scheduled and dispatched runs only from the default branch. Until `giantswarm` is the default branch, a short workflow on `main` calls this one.
+Note that GitHub starts scheduled and dispatched runs only from the default branch, which is `giantswarm`.
 
 One run does this:
 
