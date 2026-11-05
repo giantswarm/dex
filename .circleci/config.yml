@@ -53,10 +53,10 @@ validate-filters: &validate-filters
     ignore: /^(giantswarm|main|master|ledger|v[0-9]+\.[0-9]+\.x)$/
 
 # A branch pipeline whose commit already carries one of our release tags
-# builds nothing: the tag's own pipeline publishes that version, and the orb's
-# image-prepare-tag refuses a release version on a branch pipeline with a
-# failure. Run ahead of every job, this step ends such a job green before
-# checkout. A tag pipeline and an untagged commit pass through.
+# builds nothing: the tag's own pipeline publishes that version. The orb's
+# image-prepare-tag also ends such a job green, but only after checkout. Run
+# ahead of every job, this step ends it before checkout. A tag pipeline and an
+# untagged commit pass through.
 skip-tagged-commit: &skip-tagged-commit
   - run:
       name: Skip a branch build of a commit the tag pipeline publishes
