@@ -85,11 +85,47 @@ declare -A upstream_by_patch=()
 while read -r sha; do
   upstream_by_patch[$(patch_id "$sha")]=$sha
 done < <(git rev-list --no-merges "$pin..$target")
+# released_as <commit>: the upstream commit in the new release with the same
+# patch id, or nothing. A commit without changes has no patch id.
+released_as() {
+  local id
+  id=$(patch_id "$1")
+  [ -z "$id" ] || printf '%s' "${upstream_by_patch[$id]:-}"
+}
+
+# Carried commits that the new release already contains, by patch id. The
+# rebase drops them itself only when they end up empty: git looks for
+# already applied commits on the side of $pin, not of $target. A copy of an
+# upstream commit that a later upstream commit changed again would conflict.
+released=()
+for c in "${carried[@]}"; do
+  [ -z "$(released_as "$c")" ] || released+=("$c")
+done
+# Rewrites the rebase's todo list: `drop` for each released commit, and for
+# the fixup and squash lines (amend!, fixup!, squash!) that --autosquash put
+# right after it. The rebase runs with rebase.abbreviateCommands off, so the
+# list says `pick`, not `p`, whatever the user's git config says.
+todo_editor=$(mktemp)
+trap 'rm -f "$todo_editor"' EXIT
+cat > "$todo_editor" << 'EOF'
+#!/bin/sh
+awk -v released="$RELEASED" '
+  BEGIN { n = split(released, r, " ") }
+  $1 == "pick" {
+    dropping = 0
+    for (i = 1; i <= n; i++) if (index(r[i], $2) == 1) dropping = 1
+  }
+  dropping && ($1 == "pick" || $1 == "fixup" || $1 == "squash") { $1 = "drop"; if ($2 == "-C" || $2 == "-c") $2 = "" }
+  { print }
+' "$1" > "$1.new" && mv "$1.new" "$1"
+EOF
+chmod +x "$todo_editor"
 
 git checkout -q -B "$CANDIDATE" "$head"
 # --autosquash folds an `amend!` or `fixup!` commit into the carried commit it
 # names: the way a carried commit's diff or message is corrected between re-pins.
-if ! git rebase --quiet --autosquash --no-reapply-cherry-picks --empty=drop --onto "$target" "$pin" 2> rebase.err; then
+if ! RELEASED="${released[*]:-}" GIT_SEQUENCE_EDITOR="$todo_editor" \
+  git -c rebase.abbreviateCommands=false rebase --quiet --interactive --autosquash --no-reapply-cherry-picks --empty=drop --onto "$target" "$pin" 2> rebase.err; then
   conflict=$(git rev-parse REBASE_HEAD)
   applied=$(git rev-parse HEAD)
   mapfile -t files < <(git diff --name-only --diff-filter=U)
@@ -130,9 +166,9 @@ done
 if [ ${#dropped[@]} -gt 0 ]; then
   printf '#### Dropped (%d)\n\n' "${#dropped[@]}" >> "$REPORT"
   for c in "${dropped[@]}"; do
-    up=${upstream_by_patch[$(patch_id "$c")]:-}
+    up=$(released_as "$c")
     if [[ $(subject "$c") =~ ^(amend|fixup|squash)!\  ]]; then
-      printf -- '- `%s` %s: folded into its commit\n' "$(short "$c")" "$(subject "$c")"
+      printf -- '- `%s` %s: folded into its commit, or dropped with it if upstream released that commit\n' "$(short "$c")" "$(subject "$c")"
     elif [ -n "$up" ]; then
       printf -- '- `%s` %s: merged upstream as `%s`\n' "$(short "$c")" "$(subject "$c")" "$(short "$up")"
     else
@@ -144,7 +180,7 @@ fi
 
 # Every hunk the carried commits brought is in the candidate as it is in the
 # consumed head, unless ACCEPT_HUNKS names it as dropped or reworked on purpose.
-if ! scripts/fork/hunks.py "$pin" "$head" "$new_head" >> "$REPORT" 2>&1; then
+if ! "${here}/hunks.py" "$pin" "$head" "$new_head" >> "$REPORT" 2>&1; then
   env_out status lost-hunks
   exit 3
 fi

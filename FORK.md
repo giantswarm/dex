@@ -58,7 +58,7 @@ One run does this:
 
 1. It copies upstream's `master`, its `v*` branches and its tags into this repository (`scripts/fork/mirror.sh`). Then it cancels the upstream workflows that this push starts (`scripts/fork/mirror-quiet.sh`). See "The mirror".
 2. It replays our commits onto the upstream release in a new branch `sync/upstream-<date>-<release>` (`scripts/fork/repin.sh`). Our commits are the ones between the pinned release and the head of `giantswarm`. A commit that upstream has released in the meantime drops out, and the report names the upstream commit it landed as. Then `scripts/fork/hunks.py` checks that every line our commits change is still there. If a change is missing, the run stops and names the commit, the file and the place.
-3. It pushes the new branch as the org's heraldbot GitHub App. `fork-ci.yaml` runs `make test` and `make lint` on it, and the sync waits for its `ci-ok` check.
+3. It pushes the new branch as the org's heraldbot GitHub App. `fork-ci.yaml` runs `make test`, `make lint` and the tests of the fork scripts (`scripts/fork/repin_test.sh`) on it, and the sync waits for its `ci-ok` check.
 4. If `ci-ok` passes, it force-pushes the new branch onto `giantswarm`, deletes the new branch, and adds a row to `re-pins.md` on the `ledger` branch.
 5. If one of our commits conflicts with upstream, or `ci-ok` fails, nothing is pushed to `giantswarm`. Instead the run opens a pull request against `giantswarm` that names the commit and the files, or the failed check. Finish the re-pin by hand (see "Manual re-pin"), then close that pull request. Don't merge it.
 

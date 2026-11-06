@@ -49,11 +49,21 @@ jobs:
       - name: Lint
         run: make lint
 
+  fork-scripts:
+    name: Fork scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test repin.sh
+        run: scripts/fork/repin_test.sh
+
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [test, lint]
+    needs: [test, lint, fork-scripts]
     runs-on: ubuntu-latest
     steps:
       - name: All checks passed
-        run: '[ "${{ needs.test.result }}" = success ] && [ "${{ needs.lint.result }}" = success ]'
+        run: '[ "${{ needs.test.result }}" = success ] && [ "${{ needs.lint.result }}" = success ] && [ "${{ needs.fork-scripts.result }}" = success ]'
