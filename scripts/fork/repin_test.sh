@@ -100,6 +100,27 @@ test_keeps_an_empty_carried_commit() {
   [ "$replayed" = 'chore: empty marker|feat: our patch|' ] || fail "empty commit: want our patch and the empty marker on top of v1.0.1, got: ${replayed:-nothing}"
 }
 
+# An amend! commit that only rewords a carried commit has no changes either.
+# It is folded into its commit, and the report must not break on it.
+test_folds_an_amend_that_only_rewords() {
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'cd /; rm -rf "$tmp"' RETURN
+
+  # Arrange
+  setup_released_copies "$tmp" "GIT_EDITOR=\"sed -i '3s/.*/feat: our patch, reworded/'\" git commit -q --fixup=reword:HEAD~2"
+
+  # Act
+  local status
+  status=$(run_repin "$tmp")
+
+  # Assert
+  [ "$status" -eq 0 ] || fail "amend!: repin.sh exited $status, want 0: $(cat "$tmp/out")"
+  local replayed
+  replayed=$(git -C "$tmp/work" log --format=%s v1.0.1..sync/test 2> /dev/null | tr '\n' '|' || true)
+  [ "$replayed" = 'feat: our patch, reworded|' ] || fail "amend!: want only the reworded patch on top of v1.0.1, got: ${replayed:-nothing}"
+}
+
 # With rebase.abbreviateCommands, git writes `p` instead of `pick` in the todo
 # list. Someone running a manual re-pin may have it set.
 test_drops_released_commits_with_abbreviated_commands() {
@@ -160,6 +181,7 @@ test_reports_a_conflicting_carried_commit() {
 test_drops_carried_commits_that_the_release_contains
 test_reports_a_conflicting_carried_commit
 test_keeps_an_empty_carried_commit
+test_folds_an_amend_that_only_rewords
 test_drops_released_commits_with_abbreviated_commands
 
 [ "$failed" -eq 0 ] && echo "ok repin_test.sh"

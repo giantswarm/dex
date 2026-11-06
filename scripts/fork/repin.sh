@@ -166,7 +166,7 @@ done
 if [ ${#dropped[@]} -gt 0 ]; then
   printf '#### Dropped (%d)\n\n' "${#dropped[@]}" >> "$REPORT"
   for c in "${dropped[@]}"; do
-    up=${upstream_by_patch[$(patch_id "$c")]:-}
+    up=$(released_as "$c")
     if [[ $(subject "$c") =~ ^(amend|fixup|squash)!\  ]]; then
       printf -- '- `%s` %s: folded into its commit, or dropped with it if upstream released that commit\n' "$(short "$c")" "$(subject "$c")"
     elif [ -n "$up" ]; then
