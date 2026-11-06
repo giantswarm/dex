@@ -5,7 +5,7 @@ This repository is the Dex that Giant Swarm runs through [dex-app](https://githu
 | | |
 |---|---|
 | Consumed branch | `giantswarm`, the upstream release at the pin plus one commit per patch, and the default branch. Our release tags are cut from it. Every push to it needs a passing `ci-ok`, and only the sync's HeraldBot App may push to it without a pull request (the rulesets `devctl: line gate` and `devctl: default branch`, declared in `repositories/team-shield.yaml` of giantswarm/github). |
-| Old fork | `main`, the old fork. Its CircleCI still builds the image the stable dex-app release uses, until dex-app ships the image from `giantswarm` as a stable release. |
+| Old fork | The old fork was upstream `v2.43.1` plus our changes, on a branch `main` that is now deleted. Its tags, like `v2.43.3`, and their images still exist. The stable dex-app release uses that image until dex-app ships the image from `giantswarm` as a stable release. If the old line needs a fix, make a branch from `v2.43.3`. |
 | Mirror | `master`, the `v*` branches and upstream's tags, read-only copies of upstream. Never commit to them. |
 | Upstream pin | the nearest upstream release tag in the history of `giantswarm`. `git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' origin/giantswarm` shows it, and the newest row of `re-pins.md` on the `ledger` branch names it too. |
 | Tracking | giantswarm/giantswarm#34224 (the fork), giantswarm/giantswarm#38017 (sending the token exchange fixes upstream) |
