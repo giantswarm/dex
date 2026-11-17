@@ -14,6 +14,11 @@ version: 2.1
 # mirrored upstream refs (`master`, `v2.*.x`, upstream's tags) run nothing.
 # Upstream never uses `-gs.N`, so no mirrored tag matches the release filter.
 #
+# A release tag is also copied to the Aliyun registry by the in-China runner
+# (`sync-dex-china`), for installations that pull through that mirror. It logs
+# in with the `architect` context's registry list, which carries Aliyun; the
+# list below is only what the build jobs push to.
+#
 # The image is gsoci.azurecr.io/giantswarm/dex/dex, not giantswarm/dex:
 # retagger copies upstream's images to giantswarm/dex.
 #
@@ -89,6 +94,7 @@ workflows:
           build-context: .
           build-args: *build-args
           registries-data: *registries
+          split-china-push: true
           pre-steps: *skip-tagged-commit
           filters: *publish-filters
       - architect/build-image:
@@ -101,6 +107,7 @@ workflows:
           build-context: .
           build-args: *build-args
           registries-data: *registries
+          split-china-push: true
           pre-steps: *skip-tagged-commit
           filters: *publish-filters
       - architect/push-to-registries:
@@ -110,9 +117,23 @@ workflows:
           merge-digests: true
           platforms: linux/amd64,linux/arm64
           registries-data: *registries
+          split-china-push: true
           requires: [build-dex-amd64, build-dex-arm64]
           pre-steps: *skip-tagged-commit
           filters: *publish-filters
+      # Release tags only: the installations behind the Aliyun mirror run
+      # releases, and a tag pipeline never skips push-dex, whose cached image
+      # tag this job copies.
+      - architect/sync-china-registry:
+          name: sync-dex-china
+          context: architect
+          image: giantswarm/dex/dex
+          requires: [push-dex]
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v[0-9]+\.[0-9]+\.[0-9]+-gs\.[0-9]+$/
 
   validate:
     jobs:
