@@ -25,7 +25,7 @@ This repository is the Dex that Giant Swarm runs through [dex-app](https://githu
 CircleCI (`.circleci/config.yml`) builds the image `gsoci.azurecr.io/giantswarm/dex/dex` for amd64 and arm64:
 
 - On every push to `giantswarm` it publishes a dev build, tagged with a dev version like `2.46.2-r91661b28t20261105152745h24f495b`. It names the next patch version, then the commit.
-- On every release tag `vX.Y.Z-gs.N` it publishes that version, like `2.46.1-gs.1`.
+- On every release tag `vX.Y.Z-gs.N` it publishes that version, like `2.46.1-gs.1`. The in-China runner then copies it to the Aliyun registry (`giantswarm-registry.cn-shanghai.cr.aliyuncs.com/giantswarm/dex/dex`), which installations in China pull through. Dev builds are not copied.
 - On every other branch, like pull requests and `sync/**` branches, it builds both images and publishes nothing.
 
 Note that the image name is `giantswarm/dex/dex`, not `giantswarm/dex`. retagger copies upstream's images to `giantswarm/dex`, so that name holds upstream Dex without our patches.
