@@ -14,7 +14,7 @@ This repository is the Dex that Giant Swarm runs through [dex-app](https://githu
 
 | Carried commit (subject) | Why we need it | Upstream |
 |---|---|---|
-| `feat(server): restrict grant types per client` | enabling `client_credentials` must not allow staff login clients to mint application tokens | dexidp/dex#5202, open; drop on the release carrying per-client grant restrictions |
+| `feat(server): restrict grant types per client` | enabling `client_credentials` must not allow staff login clients to mint application tokens | dexidp/dex#5210, open (issue dexidp/dex#5202); drop on the release carrying per-client grant restrictions |
 | `fix(oidc): bound the fetch of the issuer's signing keys` | an issuer whose keys endpoint never answers makes every login and token exchange hang until Dex restarts | dexidp/dex#5050, open |
 | `fix(oidc): answer token exchange with 503 when the issuer's keys can't be fetched` | callers of token exchange (muster) can tell an outage from a bad token | dexidp/dex#5055, open |
 | `feat(server): put the connector ID in front of groups in issued tokens` | our identity providers and a customer's share one Dex, and `oidcGroupsPrefix: true` keeps their group names apart (`giantswarm-ad:<group>`, `customer:<group>`). dex-app turns it on. Our RBAC bindings and Kyverno policies use the prefixed names | fork-only. Upstream's `modifyGroupNames` prefix exists only for the `oidc` connector type, and our `microsoft` and `github` connectors can't use it |
