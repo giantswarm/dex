@@ -82,6 +82,9 @@ func TestHandleDeviceCode(t *testing.T) {
 				c.Now = now
 			})
 			defer httpServer.Close()
+			if err := s.storage.CreateClient(t.Context(), storage.Client{ID: tc.clientID}); err != nil {
+				t.Fatal(err)
+			}
 
 			u, err := url.Parse(s.issuerURL.String())
 			if err != nil {
